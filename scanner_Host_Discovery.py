@@ -1,5 +1,6 @@
 import argparse
 import ipaddress
+import logging
 import platform
 import re
 import subprocess
@@ -12,6 +13,7 @@ from scapy.all import ARP, Ether, conf, srp
 
 MAX_ARP_ADDRESSES = 1024
 FALLBACK_PREFIX = 24
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +35,7 @@ class NetworkContext:
 
 
 def normalize_mac(mac: str) -> str:
+    """Normalize MAC addresses to lowercase colon-separated form."""
     return mac.strip().lower().replace("-", ":")
 
 
@@ -49,7 +52,7 @@ def _as_ipv4(value: Any) -> ipaddress.IPv4Address:
 
 
 def _route_network(route: Sequence[Any]) -> ipaddress.IPv4Network:
-    """Convert one Scapy IPv4 route tuple to ipaddress.IPv4Network."""
+    """Convert one Scapy IPv4 route tuple to an IPv4Network."""
     network_value = _as_ipv4(route[0])
     netmask_value = _as_ipv4(route[1])
     return ipaddress.IPv4Network(
@@ -59,6 +62,7 @@ def _route_network(route: Sequence[Any]) -> ipaddress.IPv4Network:
 
 
 def _is_direct_gateway(value: Any) -> bool:
+    """Return True when a Scapy route represents a directly connected route."""
     try:
         return _as_ipv4(value) == ipaddress.IPv4Address("0.0.0.0")
     except (ipaddress.AddressValueError, ValueError):
@@ -71,7 +75,7 @@ def get_active_interface() -> Tuple[Any, str, str]:
 
     Scapy populates its routing table using OS-specific backends on Linux,
     Windows, and BSD-derived systems such as macOS. Keeping this lookup in
-    Scapy avoids shelling out to platform-specific routing commands.
+    Scapy avoids parsing platform-specific route command output.
     """
     interface, local_ip, gateway = conf.route.route("8.8.8.8")
 
@@ -95,16 +99,15 @@ def get_interface_network(
     """
     Determine the directly connected IPv4 network from Scapy's route table.
 
-    This replaces the previous Linux-only ``ip -4 addr`` implementation.
     Scapy obtains its route table through OS-specific providers, so this path
-    is usable on Linux, Windows, and macOS without parsing ``ip``, ``ifconfig``,
+    works across Linux, Windows, and macOS without parsing ``ip``, ``ifconfig``,
     or ``ipconfig`` output.
     """
     if local_ip is None:
         active_interface, local_ip, _ = get_active_interface()
         if not _interface_matches(interface, active_interface):
-            # We can still search the route table for the requested interface,
-            # but the active route's IP should not be used to select its subnet.
+            # Search the requested interface's route entries, but do not use
+            # the active interface's IP to select its subnet.
             local_ip = None
 
     local_address = (
@@ -158,8 +161,8 @@ def get_interface_network(
                 f"Could not determine an IPv4 network for interface {interface!s}"
             )
 
-        # A route table can be incomplete on unusual VPN/tunnel configurations.
-        # Use a conservative local /24 rather than an OS-specific command parser.
+        # Route tables can be incomplete on VPN/tunnel configurations. Use a
+        # conservative local /24 instead of an OS-specific command parser.
         return str(
             ipaddress.ip_network(
                 f"{local_address}/{FALLBACK_PREFIX}",
@@ -208,8 +211,10 @@ def get_neighbor_table() -> List[Device]:
     Read the OS ARP/IPv4 neighbor table.
 
     Linux prefers ``ip neigh`` and falls back to ``arp -an`` when available.
-    macOS uses ``arp -an``. Windows uses ``arp -a``. This layer is intentionally
-    isolated because neighbor-cache APIs differ substantially between systems.
+    macOS uses ``arp -an``. Windows uses ``arp -a``. Neighbor-cache access is
+    intentionally isolated because command formats differ between platforms.
+
+    Failure is non-fatal: active ARP discovery can still continue.
     """
     devices: List[Device] = []
     system = platform.system()
@@ -240,7 +245,7 @@ def get_neighbor_table() -> List[Device]:
             )
 
         else:
-            print(f"[!] Unsupported OS neighbor-table lookup: {system}")
+            LOGGER.warning("Unsupported OS neighbor-table lookup: %s", system)
             return []
 
         now = datetime.now().isoformat(timespec="seconds")
@@ -260,14 +265,14 @@ def get_neighbor_table() -> List[Device]:
                 )
             )
 
-    except Exception as exc:
-        # Neighbor-table lookup is useful but not required for active ARP scan.
-        print(f"[!] Could not read neighbor table: {exc}")
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError) as exc:
+        LOGGER.warning("Could not read neighbor table: %s", exc)
 
     return devices
 
 
 def _validated_scan_network(network: str) -> ipaddress.IPv4Network:
+    """Parse and enforce the bounded IPv4 ARP-scan policy."""
     parsed = ipaddress.ip_network(network, strict=False)
 
     if parsed.version != 4:
@@ -290,9 +295,10 @@ def choose_scan_network(
     """
     Select a bounded IPv4 network for ARP discovery.
 
-    An explicit ``--network`` is honored after validation. Otherwise the
-    detected interface subnet is used when it is no larger than the scanner's
-    safety bound. Larger/unknown local networks fall back to the local /24.
+    An explicit ``--network`` is honored after validation. Otherwise, the
+    detected interface subnet is used when it is valid, contains the local IP,
+    and is no larger than the configured safety bound. Larger or unusable
+    detected networks fall back to the local /24.
     """
     if requested_network:
         return str(_validated_scan_network(requested_network))
@@ -317,12 +323,30 @@ def choose_scan_network(
     return str(fallback)
 
 
+def filter_devices_to_network(
+    devices: Sequence[Device],
+    network: str,
+) -> List[Device]:
+    """Keep neighbor-table entries that belong to the selected scan network."""
+    parsed_network = ipaddress.ip_network(network, strict=False)
+    filtered: List[Device] = []
+
+    for device in devices:
+        try:
+            address = ipaddress.ip_address(device.ip)
+        except ValueError:
+            continue
+
+        if address.version == 4 and address in parsed_network:
+            filtered.append(device)
+
+    return filtered
+
+
 def arp_scan(network: str, interface: Any) -> List[Device]:
     """Perform a bounded ARP request sweep against an authorized IPv4 network."""
     parsed_network = _validated_scan_network(network)
     scan_network = str(parsed_network)
-
-    print(f"[*] ARP discovery on {scan_network}")
 
     packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=scan_network)
 
@@ -350,12 +374,19 @@ def arp_scan(network: str, interface: Any) -> List[Device]:
     return devices
 
 
+def _merge_sources(left: str, right: str) -> str:
+    """Combine source labels into a deterministic ``+``-separated value."""
+    sources = set(left.split("+"))
+    sources.update(right.split("+"))
+    return "+".join(sorted(source for source in sources if source))
+
+
 def merge_devices(*device_lists: Sequence[Device]) -> List[Device]:
     """
-    Merge duplicate observations, primarily by MAC address.
+    Normalize and merge duplicate device observations, primarily by MAC.
 
-    Source labels are combined so callers can distinguish passive neighbor-table
-    evidence from an active ARP response.
+    Source labels are combined so downstream modules can distinguish passive
+    neighbor-table evidence from active ARP responses.
     """
     merged = {}
 
@@ -367,13 +398,16 @@ def merge_devices(*device_lists: Sequence[Device]) -> List[Device]:
                 existing = merged[key]
                 existing.ip = device.ip
                 existing.last_seen = device.last_seen
-
-                sources = set(existing.source.split("+"))
-                sources.update(device.source.split("+"))
-                existing.source = "+".join(sorted(sources))
+                existing.source = _merge_sources(existing.source, device.source)
             else:
-                device.mac = key
-                merged[key] = device
+                # Copy the observation so callers' Device objects are not
+                # unexpectedly mutated by normalization/merging.
+                merged[key] = Device(
+                    ip=device.ip,
+                    mac=key,
+                    source=device.source,
+                    last_seen=device.last_seen,
+                )
 
     return list(merged.values())
 
@@ -405,6 +439,11 @@ def discover_devices(
 
     Returns ``(devices, network_context, discovery_network)``. Port scanning and
     future modules should call this function rather than duplicating discovery.
+
+    Neighbor-table lookup and active ARP discovery are best-effort evidence
+    sources. If active ARP discovery fails after the network has been validated,
+    the function keeps any usable neighbor-table observations instead of losing
+    the entire discovery result.
     """
     context = get_network_context()
     discovery_network = choose_scan_network(
@@ -413,12 +452,26 @@ def discover_devices(
         detected_network=context.network,
     )
 
-    neighbor_devices = get_neighbor_table()
+    neighbor_devices = filter_devices_to_network(
+        get_neighbor_table(),
+        discovery_network,
+    )
 
     if passive_only:
         devices = neighbor_devices
     else:
-        arp_devices = arp_scan(discovery_network, context.interface)
+        try:
+            arp_devices = arp_scan(discovery_network, context.interface)
+        except Exception as exc:
+            # Scapy raises different backend exceptions across operating systems
+            # for permission/adapter failures. Preserve passive evidence rather
+            # than discarding already discovered hosts.
+            LOGGER.warning(
+                "Active ARP discovery failed; using neighbor-table results: %s",
+                exc,
+            )
+            arp_devices = []
+
         devices = merge_devices(neighbor_devices, arp_devices)
 
     if include_local:
@@ -428,6 +481,7 @@ def discover_devices(
 
 
 def print_devices(devices: Sequence[Device]) -> None:
+    """Print discovery results for the standalone command-line interface."""
     print()
     print(f"{'IP ADDRESS':<18} {'MAC ADDRESS':<20} {'SOURCE'}")
     print("-" * 65)
@@ -446,7 +500,8 @@ def print_devices(devices: Sequence[Device]) -> None:
     print(f"Discovered {len(devices)} device(s).")
 
 
-def main() -> None:
+def build_argument_parser() -> argparse.ArgumentParser:
+    """Build the standalone CLI parser without coupling it to discovery logic."""
     parser = argparse.ArgumentParser(
         description="Cross-platform local IPv4 device discovery"
     )
@@ -465,12 +520,24 @@ def main() -> None:
         help="Only inspect the OS neighbor table; do not send ARP requests",
     )
 
+    parser.add_argument(
+        "--include-local",
+        action="store_true",
+        help="Include the scanner host itself in the returned device list",
+    )
+
+    return parser
+
+
+def main() -> None:
+    parser = build_argument_parser()
     args = parser.parse_args()
 
     try:
         devices, context, discovery_network = discover_devices(
             requested_network=args.network,
             passive_only=args.passive_only,
+            include_local=args.include_local,
         )
     except (RuntimeError, ValueError, OSError) as exc:
         parser.error(f"Host discovery failed: {exc}")
@@ -479,9 +546,7 @@ def main() -> None:
     print(f"[*] Local IP  : {context.local_ip}")
     print(f"[*] Gateway   : {context.gateway}")
     print(f"[*] Interface network : {context.network}")
-
-    if not args.passive_only:
-        print(f"[*] Discovery network : {discovery_network}")
+    print(f"[*] Discovery network : {discovery_network}")
 
     print_devices(devices)
 
