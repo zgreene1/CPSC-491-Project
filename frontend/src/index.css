@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme {
+  /* Typography */
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+
+  /* Ink (surface) scale — dark navy base with layered elevation */
+  --color-ink-950: #05070a;
+  --color-ink-900: #0a0e14;
+  --color-ink-850: #0d121a;
+  --color-ink-800: #121826;
+  --color-ink-750: #161e2d;
+  --color-ink-700: #1c2534;
+  --color-ink-650: #222c3d;
+  --color-ink-600: #2c3849;
+  --color-ink-500: #47566c;
+  --color-ink-400: #6b7b93;
+  --color-ink-300: #93a2b8;
+  --color-ink-200: #c2ccda;
+  --color-ink-100: #e4e9f0;
+  --color-ink-50: #f5f7fa;
+
+  /* Signal — custom brand accent (teal/emerald hybrid) */
+  --color-signal-50: #edfcf6;
+  --color-signal-100: #d2f7e8;
+  --color-signal-200: #a6efd1;
+  --color-signal-300: #6fe2b8;
+  --color-signal-400: #3ecc9e;
+  --color-signal-500: #1fae84;
+  --color-signal-600: #158d6b;
+  --color-signal-700: #106e55;
+  --color-signal-800: #0c5442;
+  --color-signal-900: #093f32;
+
+  /* Severity scale */
+  --color-severity-critical: #e4364b;
+  --color-severity-high: #f2994a;
+  --color-severity-medium: #f2c94c;
+  --color-severity-low: #4f9dde;
+  --color-severity-info: #6b7b93;
+
+  --shadow-elevated:
+    0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 16px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(31, 174, 132, 0.05);
+  --shadow-floating:
+    0 10px 30px rgba(0, 0, 0, 0.55), 0 3px 8px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(31, 174, 132, 0.08);
+  --shadow-glow: 0 0 0 3px rgba(31, 174, 132, 0.25);
+
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-ink-650);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+    min-height: 100vh;
+  }
+
+  /* Layered radial gradients + SVG grain for depth on the app background */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        1200px 600px at -10% -10%,
+        rgba(31, 174, 132, 0.08),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 500px at 110% 10%,
+        rgba(79, 157, 222, 0.06),
+        transparent 55%
+      ),
+      radial-gradient(
+        800px 800px at 50% 120%,
+        rgba(31, 174, 132, 0.05),
+        transparent 60%
+      );
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.03em;
+    color: var(--color-ink-50);
+  }
+
+  ::selection {
+    background: var(--color-signal-700);
+    color: var(--color-ink-50);
+  }
+}
