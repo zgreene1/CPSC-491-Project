@@ -1,4 +1,4 @@
-"""Privilege-free compatibility tests for scanner host/port modules.
+"""Privilege-free compatibility tests for scanner host/port/fingerprint modules.
 
 Run on Linux, Windows, or macOS with:
     python -m unittest -v test_scanner_compatibility.py
@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import scanner_Host_Discovery as host_discovery
 import scanner_Port_Scanner as port_scanner
+import scanner_Service_Fingerprint as service_fingerprint
 
 
 class FakeRouteTable:
@@ -127,6 +128,97 @@ class TcpScannerTests(unittest.TestCase):
         self.assertEqual(result.port, open_port)
         self.assertEqual(result.protocol, "tcp")
         self.assertEqual(result.state, "open")
+
+
+# Service fingerprinting tests use local loopback listeners only. They do not
+# contact external hosts and remain privilege-free on Linux, Windows, and macOS.
+class ServiceFingerprintTests(unittest.TestCase):
+    def _port_result(self, port, hint="unknown"):
+        return port_scanner.PortResult(
+            ip="127.0.0.1",
+            mac="local",
+            port=port,
+            protocol="tcp",
+            state="open",
+            service_hint=hint,
+            scanned_at="test",
+        )
+
+    def test_ssh_banner_detects_openssh_version(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+
+        def serve_once():
+            connection, _ = listener.accept()
+            connection.sendall(b"SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13\r\n")
+            connection.close()
+            listener.close()
+
+        threading.Thread(target=serve_once, daemon=True).start()
+        result = service_fingerprint.fingerprint_port(
+            self._port_result(port),
+            timeout=0.75,
+        )
+
+        self.assertEqual(result.service, "ssh")
+        self.assertEqual(result.product, "OpenSSH")
+        self.assertEqual(result.version, "9.6p1")
+        self.assertGreaterEqual(result.confidence, 0.95)
+
+    def test_http_headers_detect_apache_version(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+
+        def serve_once():
+            connection, _ = listener.accept()
+            connection.settimeout(1.0)
+            try:
+                connection.recv(4096)
+            except socket.timeout:
+                pass
+            connection.sendall(
+                b"HTTP/1.0 200 OK\r\n"
+                b"Server: Apache/2.4.58 (Unix)\r\n"
+                b"Content-Length: 0\r\n\r\n"
+            )
+            connection.close()
+            listener.close()
+
+        threading.Thread(target=serve_once, daemon=True).start()
+        result = service_fingerprint.fingerprint_port(
+            self._port_result(port),
+            timeout=0.75,
+        )
+
+        self.assertEqual(result.service, "http")
+        self.assertEqual(result.product, "Apache httpd")
+        self.assertEqual(result.version, "2.4.58")
+        self.assertEqual(result.detection_method, "http_headers")
+
+    def test_hint_fallback_does_not_claim_version(self):
+        # A closed local port is sufficient here because fingerprint_port falls
+        # back to the supplied service hint when no protocol evidence is found.
+        temp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        temp.bind(("127.0.0.1", 0))
+        port = temp.getsockname()[1]
+        temp.close()
+
+        result = service_fingerprint.fingerprint_port(
+            self._port_result(port, hint="http"),
+            timeout=0.1,
+        )
+
+        self.assertEqual(result.service, "http")
+        self.assertIsNone(result.product)
+        self.assertIsNone(result.version)
+        self.assertEqual(result.detection_method, "port_hint")
+        self.assertLess(result.confidence, 0.5)
 
 
 if __name__ == "__main__":

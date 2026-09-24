@@ -1,0 +1,80 @@
+[
+  {
+    "service": "ssh",
+    "product": "OpenSSH",
+    "pattern": "^SSH-[0-9.]+-OpenSSH[_-](?P<version>[0-9A-Za-z.p+-]+)",
+    "confidence": 0.99
+  },
+  {
+    "service": "http",
+    "product": "Apache httpd",
+    "pattern": "(?:^|\\n)Server:\\s*Apache/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "https",
+    "product": "Apache httpd",
+    "pattern": "(?:^|\\n)Server:\\s*Apache/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "http",
+    "product": "nginx",
+    "pattern": "(?:^|\\n)Server:\\s*nginx/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "https",
+    "product": "nginx",
+    "pattern": "(?:^|\\n)Server:\\s*nginx/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "http",
+    "product": "Microsoft IIS",
+    "pattern": "(?:^|\\n)Server:\\s*Microsoft-IIS/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "https",
+    "product": "Microsoft IIS",
+    "pattern": "(?:^|\\n)Server:\\s*Microsoft-IIS/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.98
+  },
+  {
+    "service": "http",
+    "product": "Python http.server",
+    "pattern": "(?:^|\\n)Server:\\s*SimpleHTTP/[0-9A-Za-z._+-]+\\s+Python/(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.97
+  },
+  {
+    "service": "ftp",
+    "product": "vsFTPd",
+    "pattern": "(?:^|\\n)220[^\\r\\n]*vsFTPd\\s+(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.97
+  },
+  {
+    "service": "ftp",
+    "product": "ProFTPD",
+    "pattern": "(?:^|\\n)220[^\\r\\n]*ProFTPD(?:\\s+Server)?(?:\\s+\\([^)]*\\))?[^0-9]*(?P<version>[0-9]+(?:\\.[0-9A-Za-z._+-]+)+)",
+    "confidence": 0.94
+  },
+  {
+    "service": "ftp",
+    "product": "FileZilla Server",
+    "pattern": "(?:^|\\n)220[^\\r\\n]*FileZilla Server(?:\\s+version)?\\s+(?P<version>[0-9A-Za-z._+-]+)",
+    "confidence": 0.97
+  },
+  {
+    "service": "smtp",
+    "product": "Postfix",
+    "pattern": "(?:^|\\n)220[^\\r\\n]*Postfix",
+    "confidence": 0.90
+  },
+  {
+    "service": "smtp",
+    "product": "Microsoft ESMTP",
+    "pattern": "(?:^|\\n)220[^\\r\\n]*Microsoft ESMTP",
+    "confidence": 0.90
+  }
+]
