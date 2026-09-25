@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import argparse
 import ipaddress
 import socket
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, List, Optional, Sequence, Tuple
+from threading import Event
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from scanner_Host_Discovery import (
     Device,
@@ -106,12 +109,16 @@ SMART_FALLBACK_PORTS = tuple(range(1, 1025))
 @dataclass(frozen=True)
 class PortResult:
     ip: str
-    mac: str
+    mac: Optional[str]
     port: int
     protocol: str
     state: str
     service_hint: str
     scanned_at: str
+
+
+PortProgressCallback = Callable[[Device, int, Optional[PortResult]], None]
+PortTotalCallback = Callable[[int], None]
 
 
 def parse_ports(spec: Optional[str]) -> List[int]:
@@ -256,8 +263,10 @@ def _scan_targets(
     targets: Iterable[Tuple[Device, int]],
     timeout: float,
     workers: int,
+    progress_callback: Optional[PortProgressCallback] = None,
+    cancel_event: Optional[Event] = None,
 ) -> List[PortResult]:
-    """Scan an arbitrary stream of host/port targets with bounded concurrency."""
+    """Scan host/port targets with bounded concurrency and cooperative cancel."""
     if timeout <= 0:
         raise ValueError("timeout must be greater than 0")
 
@@ -267,22 +276,27 @@ def _scan_targets(
     if workers > 512:
         raise ValueError("workers may not exceed 512")
 
+    if cancel_event is not None and cancel_event.is_set():
+        return []
+
     open_ports: List[PortResult] = []
     target_iter = iter(targets)
     queue_limit = max(workers * 4, workers)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        pending = set()
+        pending: Dict[object, Tuple[Device, int]] = {}
 
         def submit_next() -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                return False
+
             try:
                 device, port = next(target_iter)
             except StopIteration:
                 return False
 
-            pending.add(
-                executor.submit(scan_tcp_port, device, port, timeout)
-            )
+            future = executor.submit(scan_tcp_port, device, port, timeout)
+            pending[future] = (device, port)
             return True
 
         for _ in range(queue_limit):
@@ -290,16 +304,31 @@ def _scan_targets(
                 break
 
         while pending:
-            completed, pending = wait(
-                pending,
+            completed, _ = wait(
+                set(pending),
                 return_when=FIRST_COMPLETED,
             )
 
             for future in completed:
+                device, port = pending.pop(future)
+                if future.cancelled():
+                    continue
+
                 result = future.result()
 
                 if result is not None:
                     open_ports.append(result)
+
+                if progress_callback is not None:
+                    progress_callback(device, port, result)
+
+            if cancel_event is not None and cancel_event.is_set():
+                # Futures that have not started can be cancelled immediately.
+                # Running socket calls are allowed to finish under their normal
+                # timeout instead of being forcefully terminated.
+                for future in list(pending):
+                    future.cancel()
+                break
 
             for _ in range(len(completed)):
                 if not submit_next():
@@ -313,12 +342,13 @@ def _scan_targets(
         ),
     )
 
-
 def scan_open_ports(
     devices: Sequence[Device],
     ports: Sequence[int],
     timeout: float = 0.35,
     workers: int = 100,
+    progress_callback: Optional[PortProgressCallback] = None,
+    cancel_event: Optional[Event] = None,
 ) -> List[PortResult]:
     """Scan the same requested TCP port set across all discovered devices."""
     if not devices or not ports:
@@ -328,8 +358,9 @@ def scan_open_ports(
         _targets(devices, ports),
         timeout=timeout,
         workers=workers,
+        progress_callback=progress_callback,
+        cancel_event=cancel_event,
     )
-
 
 def related_ports_for(open_ports: Sequence[int]) -> List[int]:
     """Choose additional TCP ports based on service families already exposed."""
@@ -349,6 +380,10 @@ def smart_scan_open_ports(
     devices: Sequence[Device],
     timeout: float = 0.35,
     workers: int = 100,
+    progress_callback: Optional[PortProgressCallback] = None,
+    total_callback: Optional[PortTotalCallback] = None,
+    cancel_event: Optional[Event] = None,
+    verbose: bool = True,
 ) -> List[PortResult]:
     """
     Adaptively discover likely open TCP services without scanning all 65,535 ports.
@@ -358,24 +393,37 @@ def smart_scan_open_ports(
       * if Stage 1 found services, scan related service-family ports;
       * if Stage 1 found nothing, fall back to the privileged range 1-1024.
 
-    This is intentionally faster than a full scan and therefore cannot
-    guarantee discovery of an arbitrary service on an unusual high port.
-    Use ``--ports all`` when exhaustive coverage is required.
+    ``progress_callback`` runs once for every completed host/port check.
+    ``total_callback`` reports the currently known total amount of scan work;
+    smart mode may increase that total after Stage 1 determines Stage 2.
+    Cancellation is cooperative and stops new work from being submitted.
     """
     if not devices:
+        if total_callback is not None:
+            total_callback(0)
         return []
 
-    print(
-        f"[*] Smart scan : stage 1 checks {len(SMART_BASE_PORTS)} "
-        f"high-probability TCP ports per host"
-    )
+    stage_one_total = len(devices) * len(SMART_BASE_PORTS)
+    if total_callback is not None:
+        total_callback(stage_one_total)
+
+    if verbose:
+        print(
+            f"[*] Smart scan : stage 1 checks {len(SMART_BASE_PORTS)} "
+            f"high-probability TCP ports per host"
+        )
 
     stage_one = scan_open_ports(
         devices=devices,
         ports=SMART_BASE_PORTS,
         timeout=timeout,
         workers=workers,
+        progress_callback=progress_callback,
+        cancel_event=cancel_event,
     )
+
+    if cancel_event is not None and cancel_event.is_set():
+        return stage_one
 
     open_by_ip = {}
     for result in stage_one:
@@ -399,6 +447,9 @@ def smart_scan_open_ports(
         stage_two_counts[device.ip] = (reason, len(candidate_ports))
         stage_two_targets.extend((device, port) for port in candidate_ports)
 
+    if total_callback is not None:
+        total_callback(stage_one_total + len(stage_two_targets))
+
     related_hosts = sum(
         1 for reason, count in stage_two_counts.values()
         if reason == "related" and count
@@ -409,15 +460,18 @@ def smart_scan_open_ports(
     )
 
     if stage_two_targets:
-        print(
-            f"[*] Smart scan : stage 2 expands {related_hosts} host(s) by "
-            f"service family and checks 1-1024 on {fallback_hosts} host(s) "
-            f"with no stage-1 hits"
-        )
+        if verbose:
+            print(
+                f"[*] Smart scan : stage 2 expands {related_hosts} host(s) by "
+                f"service family and checks 1-1024 on {fallback_hosts} host(s) "
+                f"with no stage-1 hits"
+            )
         stage_two = _scan_targets(
             stage_two_targets,
             timeout=timeout,
             workers=workers,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
         )
     else:
         stage_two = []
@@ -433,7 +487,6 @@ def smart_scan_open_ports(
             result.port,
         ),
     )
-
 
 def discover_hosts(
     requested_network: Optional[str] = None,
