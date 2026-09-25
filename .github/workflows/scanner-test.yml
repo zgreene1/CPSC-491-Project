@@ -1,12 +1,19 @@
-name: Scanner Compatibility Tests
+name: Scanner CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   scanner-tests:
-    name: Test on ${{ matrix.os }}
+    name: Scanner tests - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -16,6 +23,10 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macos-latest
+
+    defaults:
+      run:
+        working-directory: Backend
 
     steps:
       - name: Checkout repository
@@ -27,7 +38,15 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip scapy
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scapy
 
-      - name: Run scanner compatibility tests
-        run: python -m unittest -v test_scanner_compatibility.py
+      - name: Compile scanner source
+        run: python -m compileall -q .
+
+      - name: Validate service signatures
+        run: python -c "import json, pathlib; json.loads(pathlib.Path('service_signatures.json').read_text(encoding='utf-8')); print('service_signatures.json is valid JSON')"
+
+      - name: Run scanner test suites
+        run: python -m unittest discover -v -s . -p "test_scanner_*.py"
