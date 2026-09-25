@@ -20,11 +20,12 @@ import json
 import re
 import socket
 import ssl
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from threading import Event
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from scanner_Host_Discovery import Device, print_devices
 from scanner_Port_Scanner import (
@@ -112,7 +113,7 @@ HTTP_HINTS = {"http", "https", "http-alt", "https-alt"}
 @dataclass(frozen=True)
 class ServiceFingerprint:
     ip: str
-    mac: str
+    mac: Optional[str]
     port: int
     protocol: str
     service: str
@@ -139,6 +140,9 @@ class ProbeObservation:
     banner: str
     detection_method: str
     protocol_confidence: float
+
+
+FingerprintProgressCallback = Callable[[ServiceFingerprint], None]
 
 
 def _clean_text(data: bytes) -> str:
@@ -579,8 +583,10 @@ def fingerprint_services(
     port_results: Sequence[PortResult],
     timeout: float = DEFAULT_FINGERPRINT_TIMEOUT,
     workers: int = DEFAULT_FINGERPRINT_WORKERS,
+    progress_callback: Optional[FingerprintProgressCallback] = None,
+    cancel_event: Optional[Event] = None,
 ) -> List[ServiceFingerprint]:
-    """Fingerprint a collection of open TCP ports with bounded concurrency."""
+    """Fingerprint open ports with bounded concurrency and cooperative cancel."""
     if timeout <= 0:
         raise ValueError("fingerprint timeout must be greater than 0")
     if workers < 1:
@@ -589,22 +595,57 @@ def fingerprint_services(
         raise ValueError(f"fingerprint workers may not exceed {MAX_FINGERPRINT_WORKERS}")
     if not port_results:
         return []
+    if cancel_event is not None and cancel_event.is_set():
+        return []
 
     fingerprints: List[ServiceFingerprint] = []
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(fingerprint_port, result, timeout): result
-            for result in port_results
-        }
+    result_iter = iter(port_results)
+    queue_limit = max(workers * 4, workers)
 
-        for future in as_completed(futures):
-            fingerprints.append(future.result())
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        pending: Dict[object, PortResult] = {}
+
+        def submit_next() -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                return False
+            try:
+                result = next(result_iter)
+            except StopIteration:
+                return False
+
+            future = executor.submit(fingerprint_port, result, timeout)
+            pending[future] = result
+            return True
+
+        for _ in range(queue_limit):
+            if not submit_next():
+                break
+
+        while pending:
+            completed, _ = wait(set(pending), return_when=FIRST_COMPLETED)
+
+            for future in completed:
+                pending.pop(future, None)
+                if future.cancelled():
+                    continue
+                fingerprint = future.result()
+                fingerprints.append(fingerprint)
+                if progress_callback is not None:
+                    progress_callback(fingerprint)
+
+            if cancel_event is not None and cancel_event.is_set():
+                for future in list(pending):
+                    future.cancel()
+                break
+
+            for _ in range(len(completed)):
+                if not submit_next():
+                    break
 
     return sorted(
         fingerprints,
         key=lambda result: (ipaddress.ip_address(result.ip), result.port),
     )
-
 
 def print_fingerprints(results: Sequence[ServiceFingerprint]) -> None:
     print()
