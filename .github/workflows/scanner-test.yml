@@ -15,6 +15,7 @@ jobs:
   scanner-tests:
     name: Scanner tests - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -28,25 +29,32 @@ jobs:
       run:
         working-directory: Backend
 
+    env:
+      PYTHONUNBUFFERED: "1"
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: Install dependencies
+      - name: Install scanner dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install scapy
 
-      - name: Compile scanner source
+      - name: Compile scanner source and tests
         run: python -m compileall -q .
 
       - name: Validate service signatures
         run: python -c "import json, pathlib; json.loads(pathlib.Path('service_signatures.json').read_text(encoding='utf-8')); print('service_signatures.json is valid JSON')"
 
-      - name: Run scanner test suites
-        run: python -m unittest discover -v -s . -p "test_scanner_*.py"
+      - name: Run scanner compatibility, Sprint 2, and lifecycle tests
+        run: >-
+          python -m unittest -v
+          test_scanner_compatibility.py
+          test_scanner_sprint2.py
+          test_scanner_lifecycle.py
