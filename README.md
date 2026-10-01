@@ -2,9 +2,9 @@
 
 A cross-platform network vulnerability scanner developed for **CPSC 491-10**.
 
-The project is designed to discover devices on a local network, identify exposed network services, analyze those services for potential vulnerabilities, and present the results through an accessible web-based interface.
+The project is designed to discover devices on an authorized network, identify exposed TCP services, fingerprint discovered services and versions, and provide structured scan data that can be consumed by the backend, persistence layer, and future web interface.
 
-Development is being completed incrementally. The current implementation focuses primarily on the scanner backend, including **host discovery** and **TCP port scanning**.
+Development is being completed incrementally. The current implementation now includes the Sprint 2 scanner orchestration foundation: shared scanner data contracts, target normalization, coordinated host discovery and TCP scanning, service fingerprinting, lifecycle tracking, progress reporting, cooperative cancellation, structured errors, and aggregated scan results.
 
 > **Important:** This project is intended for educational purposes and for scanning systems and networks that you own or have explicit authorization to test.
 
@@ -12,18 +12,23 @@ Development is being completed incrementally. The current implementation focuses
 
 ## Project Overview
 
-The Vulnerability Scanner is intended to provide a modular scanning pipeline capable of:
+The Vulnerability Scanner is designed as a modular scanning pipeline capable of:
 
-1. Detecting hosts on a network.
-2. Identifying reachable TCP ports.
-3. Determining services associated with discovered ports.
-4. Matching discovered services against known vulnerabilities.
-5. Assigning vulnerability severity information.
-6. Generating and storing scan results.
-7. Presenting results through a web interface.
-8. Supporting both periodic and event-driven scanning.
+1. Accepting and validating scan configuration.
+2. Discovering hosts on a local network.
+3. Normalizing discovered and manually supplied targets.
+4. Identifying reachable TCP ports.
+5. Fingerprinting services and software versions.
+6. Tracking scan lifecycle and progress.
+7. Supporting cooperative scan cancellation.
+8. Returning structured scan results and errors.
+9. Matching discovered services against known vulnerabilities.
+10. Assigning vulnerability severity information.
+11. Generating and storing scan results.
+12. Presenting results through a web interface.
+13. Supporting periodic and event-driven scanning.
 
-The scanner is being designed so individual components can be developed and tested independently rather than placing the entire scanning process into a single program.
+The scanner is intentionally split into focused modules so discovery, scanning, fingerprinting, orchestration, persistence, backend, and UI work can evolve independently.
 
 ---
 
@@ -34,13 +39,30 @@ The scanner is being designed so individual components can be developed and test
 * Cross-platform host discovery
 * Local interface detection
 * Local network/subnet identification
-* Local host inclusion in discovery results
+* Optional local host inclusion in discovery results
 * ARP-based device discovery where supported
 * Operating-system neighbor table discovery
 * Duplicate host result normalization
-* TCP port scanning
+* TCP connect port scanning
 * Targeted port scanning
-* Broader port discovery when ports are not explicitly supplied
+* Common, smart, custom, and full-range TCP scan modes
+* Adaptive smart port discovery
+* Service fingerprinting
+* Service and version detection for supported protocols/signatures
+* Shared scanner data contracts
+* Scan configuration validation
+* Host observation normalization
+* Port observation normalization
+* Manual target support
+* IPv4, hostname, and bounded CIDR target normalization
+* Scanner coordinator / orchestration layer
+* Scan lifecycle state tracking
+* Scan progress reporting
+* Structured scanner errors
+* Structured final/partial scan results
+* Cooperative cancellation hooks
+* Scanner adapters that preserve existing low-level modules
+* Sprint 2 integration tests
 * Cross-platform compatibility testing
 * Linux support
 * Windows support
@@ -48,12 +70,13 @@ The scanner is being designed so individual components can be developed and test
 
 ### In Development / Planned
 
-* Service fingerprinting
-* Service/version detection
 * Vulnerability matching
 * CVE/NVD integration
+* CPE normalization
 * CVSS severity scoring
+* Backend service/API integration
 * Scan persistence
+* Frontend/backend scan contracts
 * Scan scheduling
 * Detection of newly connected devices
 * Periodic rescanning
@@ -64,60 +87,278 @@ The scanner is being designed so individual components can be developed and test
 
 ---
 
-## Scanner Architecture
+## Sprint 2 Architecture
 
-The project separates the scanning process into independent modules.
+Sprint 2 refactors the original standalone scanner modules into a coordinated scanner pipeline without replacing their working core logic.
 
 ```text
-                 +------------------+
-                 |   Scan Request   |
-                 +---------+--------+
-                           |
-                           v
-                 +------------------+
-                 |  Host Discovery  |
-                 +---------+--------+
-                           |
-                    Discovered Hosts
-                           |
-                           v
-                 +------------------+
-                 |   Port Scanner   |
-                 +---------+--------+
-                           |
-                      Open Ports
-                           |
-                           v
-                 +------------------+
-                 |     Service      |
-                 |  Fingerprinting  |
-                 +---------+--------+
-                           |
-                           v
-                 +------------------+
-                 | Vulnerability DB |
-                 |     Matching     |
-                 +---------+--------+
-                           |
-                           v
-                 +------------------+
-                 | CVSS / Findings  |
-                 +---------+--------+
-                           |
-                           v
-                 +------------------+
-                 | Reporting / Data |
-                 |   Persistence    |
-                 +------------------+
+                    +----------------------+
+                    |  ScanConfiguration   |
+                    +----------+-----------+
+                               |
+                               v
+                    +----------------------+
+                    |  ScannerCoordinator  |
+                    +----------+-----------+
+                               |
+            +------------------+------------------+
+            |                  |                  |
+            v                  v                  v
+   +----------------+  +----------------+  +-------------------+
+   | Host Discovery |  |  Port Scanner  |  | Service           |
+   | Device output  |  | PortResult     |  | Fingerprinting    |
+   +-------+--------+  +-------+--------+  | ServiceFingerprint|
+           |                   |           +---------+---------+
+           +---------+---------+                     |
+                     |                               |
+                     v                               |
+              +-------------+                        |
+              |   Adapters  |<-----------------------+
+              +------+------+
+                     |
+                     v
+       +-------------------------------+
+       | Shared Scanner Contract Types |
+       | HostObservation               |
+       | PortObservation               |
+       | ScanProgress                  |
+       | ScannerError                  |
+       | ScanResult                    |
+       +---------------+---------------+
+                       |
+              +--------+--------+
+              |                 |
+              v                 v
+          Backend           Persistence
+              |
+              v
+          Future Web UI
 ```
 
-Host discovery and port scanning currently form the implemented portion of this pipeline.
+The existing discovery, TCP scanning, and fingerprinting modules remain independently usable. The coordinator now provides the application-facing workflow.
+
+---
+
+## Shared Scanner Data Contracts
+
+Primary implementation:
+
+```text
+scanner_contracts.py
+```
+
+The shared contracts define the data that scanner, backend, persistence, frontend, and future vulnerability-matching components should use.
+
+### `ScanConfiguration`
+
+Represents scan input settings such as:
+
+* Manual targets
+* Scan mode
+* Port selection
+* Timeout
+* Discovery enable/disable
+* Discovery network
+* Local-host inclusion
+* Concurrency
+* Scan identifier and timestamp
+
+Configuration validation rejects invalid ports, unsupported modes, invalid timeout/concurrency values, and configurations with neither discovery nor manual targets enabled.
+
+### `HostObservation`
+
+Standard representation of a host known to the scanner.
+
+Typical fields include:
+
+* IP address
+* Optional hostname
+* Optional MAC address
+* Discovery source
+* Discovery status
+* Last-seen timestamp
+* Optional metadata
+
+### `PortObservation`
+
+Standard representation of a host/port observation.
+
+Typical fields include:
+
+* Host IP and optional MAC
+* Port
+* Protocol
+* Port state
+* Service hint
+* Fingerprinted service
+* Product
+* Version
+* Banner
+* Confidence
+* Observation timestamp
+
+### `ScanLifecycleState`
+
+Current states include:
+
+```text
+CREATED
+DISCOVERING
+SCANNING
+IDENTIFYING
+MATCHING
+COMPLETED
+FAILED
+CANCELLED
+```
+
+`IDENTIFYING` is active when service fingerprinting is performed by the coordinator.
+
+`MATCHING` is reserved for the future vulnerability/CVE matching stage and should not be treated as active until that work is implemented.
+
+### `ScanProgress`
+
+Tracks runtime progress including:
+
+* Hosts discovered
+* Hosts completed
+* Ports completed
+* Total planned port checks where known
+* Percent complete
+* Current host
+* Current port
+* Elapsed time
+* Cancellation state
+
+### `ScannerError`
+
+Provides consistent structured failures with:
+
+* Machine-readable error code
+* Human-readable message
+* Pipeline stage
+* Optional diagnostic details
+* Recoverable/non-recoverable flag
+
+### `ScanResult`
+
+Represents the final or partial output of a scan and includes:
+
+* Configuration summary
+* Lifecycle state
+* Start/completion timestamps
+* Host observations
+* Port observations
+* Progress summary
+* Structured errors
+* Optional metadata
+
+---
+
+# Scanner Coordinator
+
+Primary implementation:
+
+```text
+scanner_coordinator.py
+```
+
+The coordinator owns the Sprint 2 scanner pipeline.
+
+```mermaid
+flowchart TD
+    A[ScanConfiguration] --> B[Validate Configuration]
+    B --> C{Discovery Enabled?}
+    C -->|Yes| D[Host Discovery]
+    C -->|No| E[Manual Targets]
+    D --> F[Target Normalization]
+    E --> F
+    F --> G[TCP Port Scanning]
+    G --> H[Service Fingerprinting]
+    H --> I[Aggregate Results]
+    I --> J[ScanResult]
+```
+
+The coordinator is responsible for:
+
+* Configuration validation
+* Lifecycle transitions
+* Host discovery
+* Manual target handling
+* Target normalization
+* TCP scan execution
+* Service fingerprinting
+* Progress tracking
+* Cooperative cancellation
+* Error normalization
+* Partial-result preservation
+* Final `ScanResult` aggregation
+
+The coordinator should be the primary entry point for backend integration instead of requiring backend code to directly manage discovery, port scanning, or fingerprinting internals.
+
+---
+
+# Target Normalization
+
+Primary implementation:
+
+```text
+scanner_target_normalizer.py
+```
+
+Manual and discovered targets are converted into one normalized scan path.
+
+Supported target types include:
+
+* IPv4 address
+* Hostname
+* Bounded IPv4 CIDR range
+* Hosts returned by local discovery
+
+Target normalization:
+
+* Validates targets before scanning
+* Resolves hostnames with Python networking APIs
+* Safely expands bounded CIDR ranges
+* Removes duplicate targets
+* Preserves discovery/manual source information
+* Converts normalized targets into shared `HostObservation` data
+
+The implementation avoids operating-system-specific hostname resolution so the same behavior can be used on Linux, Windows, and macOS.
+
+---
+
+# Scanner Adapters
+
+Primary implementation:
+
+```text
+scanner_adapters.py
+```
+
+Adapters allow the original scanner modules to remain focused on low-level scanner behavior while the rest of the application consumes shared contract objects.
+
+Current conversions include:
+
+```text
+Device
+  -> HostObservation
+
+HostObservation
+  -> Device
+
+PortResult
+  -> PortObservation
+
+ServiceFingerprint
+  -> enriched PortObservation
+```
+
+This allows the scanner to retain its tested discovery, TCP, and fingerprinting implementations without exposing those internal classes to future backend or persistence code.
 
 ---
 
 # Host Discovery
-
-The host discovery module is responsible for identifying devices available on the scanner's local network.
 
 Primary implementation:
 
@@ -125,9 +366,9 @@ Primary implementation:
 scanner_Host_Discovery.py
 ```
 
-## Discovery Process
+The host discovery module identifies devices available on the scanner's local network.
 
-The scanner first determines the active network interface and associated network information.
+The scanner determines the active interface, local IPv4 address, gateway, interface network, and bounded discovery network.
 
 Example:
 
@@ -139,51 +380,37 @@ Example:
 [*] Discovery network : 10.67.28.0/24
 ```
 
-The scanner then gathers hosts using multiple discovery sources.
+The scanner gathers host observations using multiple sources:
 
 ```mermaid
 flowchart TD
     A[Start Host Discovery] --> B[Determine Active Interface]
     B --> C[Determine Local IP and Network]
-    C --> D[Add Local Interface]
-    D --> E[Perform ARP Discovery]
-    E --> F[Read OS Neighbor Table]
-    F --> G[Combine Discovery Results]
-    G --> H[Remove Duplicate Hosts]
-    H --> I[Return Discovered Devices]
-```
-
-Using multiple discovery mechanisms helps compensate for differences between operating systems and network environments.
-
-Example output:
-
-```text
-IP ADDRESS         MAC ADDRESS          SOURCE
------------------------------------------------------------------
-10.67.28.133       local                local_interface
-10.67.31.254       78:24:59:2c:d6:99    arp_scan+neighbor_table
-
-Discovered 2 device(s).
+    C --> D[Read OS Neighbor Table]
+    D --> E{Passive Only?}
+    E -->|No| F[Perform Bounded ARP Discovery]
+    E -->|Yes| G[Use Neighbor Results]
+    F --> H[Merge Discovery Results]
+    G --> H
+    H --> I[Optionally Include Local Host]
+    I --> J[Return Devices]
 ```
 
 ### Discovery Sources
 
-Results may originate from sources such as:
+| Source | Description |
+| --- | --- |
+| `local_interface` | Scanner's own interface |
+| `arp_scan` | Device detected through active ARP discovery |
+| `neighbor_table` | Device found in the operating system's neighbor cache |
+| Combined sources | Host detected through more than one discovery mechanism |
+| `manual_target` | Host supplied through scan configuration/target normalization |
 
-| Source            | Description                                                   |
-| ----------------- | ------------------------------------------------------------- |
-| `local_interface` | Scanner's own network interface                               |
-| `arp_scan`        | Device detected through ARP discovery                         |
-| `neighbor_table`  | Device found in the operating system's network neighbor table |
-| Combined sources  | Host discovered through multiple mechanisms                   |
-
-A host detected through multiple methods is combined into a single result rather than being reported multiple times.
+The local host no longer uses the placeholder string `local` as a MAC address. Unknown MAC addresses are represented as absent/null data at the shared contract boundary.
 
 ---
 
 # Port Scanner
-
-The port scanner analyzes discovered or manually specified hosts for reachable TCP services.
 
 Primary implementation:
 
@@ -191,90 +418,167 @@ Primary implementation:
 scanner_Port_Scanner.py
 ```
 
-The current scanner focuses on **TCP connections**.
+The scanner performs TCP connect scanning.
 
-```mermaid
-flowchart TD
-    A[Receive Target] --> B[Validate Target]
-    B --> C[Determine Ports to Scan]
-    C --> D[Attempt TCP Connections]
-    D --> E{Port Reachable?}
-    E -->|Yes| F[Record Open Port]
-    E -->|No| G[Continue Scan]
-    F --> G
-    G --> H{Ports Remaining?}
-    H -->|Yes| D
-    H -->|No| I[Return Results]
+Supported scan modes include:
+
+* `smart` — adaptive high-probability discovery
+* `common` — fixed common TCP port set
+* `custom` — user-defined ports/ranges
+* `all` — TCP ports 1-65535
+
+Example custom specifications include:
+
+```text
+22
+22,80,443
+1-1024
+22,80,443,8000-8100
 ```
 
-The port scanner can be used independently or receive hosts discovered by the host discovery module.
+### Smart Scan
 
-For example, a temporary local HTTP server can be used to test detection of an open TCP port.
+Smart mode performs staged discovery:
 
-### Linux / macOS
+1. Scan a high-probability TCP port set.
+2. If services are found, scan additional ports related to those service families.
+3. If no service is found in stage 1, expand the host scan through TCP ports 1-1024.
 
-```bash
-python3 -m http.server 8000 --bind 0.0.0.0
+Smart mode is intended to improve discovery speed, but it is not guaranteed to find a service running on an unusual high port. Use the `all` mode when exhaustive TCP coverage is required.
+
+### Progress and Cancellation
+
+The port scanning engine now supports hooks for:
+
+* Completed port checks
+* Current host/port progress
+* Dynamic total-work reporting
+* Cooperative cancellation
+
+Cancellation stops new work from being scheduled while allowing in-progress TCP attempts to finish through their configured timeout.
+
+This avoids platform-specific thread/process termination and preserves compatibility across Linux, Windows, and macOS.
+
+---
+
+# Service Fingerprinting
+
+Primary implementation:
+
+```text
+scanner_Service_Fingerprint.py
 ```
 
-### Windows
+Service fingerprinting is now implemented and integrated into the coordinated scanner pipeline.
 
-```powershell
-python -m http.server 8000 --bind 0.0.0.0
+The fingerprinting stage consumes open TCP ports and performs lightweight protocol-aware probing.
+
+Currently supported probe families include:
+
+* SSH
+* HTTP
+* HTTPS
+* FTP
+* SMTP
+* Passive banner detection
+* Generic/unknown service probing
+
+The scanner can extract data such as:
+
+```text
+PORT      SERVICE   PRODUCT              VERSION
+22/tcp    ssh       OpenSSH              9.x
+80/tcp    http      Apache httpd         2.4.x
+443/tcp   https     nginx                1.x
+8000/tcp  http      Python http.server   3.x
 ```
 
-This creates a TCP service on port `8000` that can be used while testing the scanner.
+Service signatures are loaded from:
+
+```text
+service_signatures.json
+```
+
+The signature file supports:
+
+* Service name
+* Product name
+* Regular-expression banner pattern
+* Optional version extraction
+* Confidence value
+
+Fingerprinting remains separate from TCP port discovery. A port number provides only a service hint; service/product/version data is considered stronger only after the fingerprinting stage observes protocol/banner evidence.
+
+Service results are merged back into `PortObservation` objects so downstream consumers do not need a separate fingerprint result tree.
 
 ---
 
 # Scanner Lifecycle
 
-The intended full scanner lifecycle extends beyond simply running one port scan.
+The coordinated Sprint 2 scanner currently follows:
 
 ```mermaid
 flowchart LR
-    A[Configure Scan] --> B[Host Discovery]
-    B --> C[Port Discovery]
-    C --> D[Service Fingerprinting]
-    D --> E[Vulnerability Analysis]
-    E --> F[Severity Scoring]
-    F --> G[Generate Results]
-    G --> H[Persist Results]
-    H --> I[Web UI]
+    A[CREATED] --> B[DISCOVERING]
+    B --> C[SCANNING]
+    C --> D[IDENTIFYING]
+    D --> E[COMPLETED]
+
+    A --> C
+    B --> F[FAILED]
+    C --> F
+    D --> F
+
+    B --> G[CANCELLED]
+    C --> G
+    D --> G
 ```
 
-The architecture is intended to allow scans to be initiated through several mechanisms.
+A scan may move directly from `CREATED` to `SCANNING` when discovery is disabled and manual targets are provided.
 
-```text
-Manual Scan
-     |
-     +--------+
-              |
-Scheduled ----+----> Scanner Pipeline
-              |
-New Device ---+
-Detected
-```
-
-This supports the longer-term goal of monitoring a network rather than requiring every scan to be manually initiated.
+Future CVE matching will introduce the active `MATCHING` stage between identification and completion.
 
 ---
 
 # Repository Structure
 
-The scanner portion of the project currently centers around the following files:
+The scanner portion of the project currently centers around:
 
 ```text
 Vulnerability-Scanner/
 |
+|-- scanner_contracts.py
+|   `-- Shared Sprint 2 scanner data contracts
+|
+|-- scanner_adapters.py
+|   `-- Conversion between low-level scanner classes and shared contracts
+|
+|-- scanner_target_normalizer.py
+|   `-- Manual/discovered target validation, resolution, expansion, and deduplication
+|
+|-- scanner_coordinator.py
+|   `-- Coordinated scan execution, lifecycle, progress, cancellation, errors, and results
+|
 |-- scanner_Host_Discovery.py
-|   `-- Network and host discovery
+|   `-- Cross-platform local network and host discovery
 |
 |-- scanner_Port_Scanner.py
-|   `-- TCP port discovery
+|   `-- TCP port discovery with smart scanning, progress, and cancellation hooks
+|
+|-- scanner_Service_Fingerprint.py
+|   `-- Service/product/version fingerprinting
+|
+|-- service_signatures.json
+|   `-- Local service fingerprint signature database
 |
 |-- test_scanner_compatibility.py
-|   `-- Cross-platform compatibility testing
+|   `-- Existing cross-platform scanner compatibility tests
+|
+|-- test_scanner_sprint2.py
+|   `-- Sprint 2 contracts, normalization, coordinator, progress, and cancellation tests
+|
+|-- test_scanner_lifecycle.py
+|   `-- End-to-end CREATED/DISCOVERING/SCANNING/IDENTIFYING lifecycle tests
 |
 |-- README.md
 |   `-- Project documentation
@@ -282,15 +586,15 @@ Vulnerability-Scanner/
 `-- ...
 ```
 
-Additional modules will be added as the fingerprinting, vulnerability analysis, persistence, API, and web interface portions of the project are implemented.
-
 ---
 
 # Requirements
 
 The scanner is written in **Python 3**.
 
-Verify Python is installed before running the project.
+The current host discovery implementation uses **Scapy**.
+
+Verify Python is installed:
 
 ### Linux / macOS
 
@@ -304,7 +608,7 @@ python3 --version
 python --version
 ```
 
-Install project dependencies when a `requirements.txt` file is available:
+Install project dependencies:
 
 ### Linux / macOS
 
@@ -318,11 +622,15 @@ python3 -m pip install -r requirements.txt
 python -m pip install -r requirements.txt
 ```
 
-Some discovery techniques may require elevated privileges depending on the operating system and network configuration.
+If a requirements file has not yet been finalized, Scapy must at minimum be available for host discovery.
+
+Some discovery operations may require elevated privileges depending on the operating system, network adapter, and local security configuration.
 
 ---
 
-# Running the Scanner
+# Running Standalone Scanner Modules
+
+The original modules remain usable independently for development and debugging.
 
 ## Host Discovery
 
@@ -338,10 +646,6 @@ python3 scanner_Host_Discovery.py
 python scanner_Host_Discovery.py
 ```
 
-The discovery module determines the active interface, local IP address, gateway, network range, and discovered devices.
-
----
-
 ## Port Scanner
 
 ### Linux / macOS
@@ -356,39 +660,106 @@ python3 scanner_Port_Scanner.py
 python scanner_Port_Scanner.py
 ```
 
-Scanner options should be supplied according to the command-line arguments provided by the implementation.
+Example:
 
-The port scanner can operate against manually specified targets and is designed to eventually consume hosts automatically from the host discovery module.
+```bash
+python3 scanner_Port_Scanner.py --ports 22,80,443,8000
+```
+
+Windows:
+
+```powershell
+python scanner_Port_Scanner.py --ports 22,80,443,8000
+```
+
+## Service Fingerprinting
+
+### Linux / macOS
+
+```bash
+python3 scanner_Service_Fingerprint.py
+```
+
+### Windows
+
+```powershell
+python scanner_Service_Fingerprint.py
+```
+
+Example with explicit ports:
+
+### Linux / macOS
+
+```bash
+python3 scanner_Service_Fingerprint.py --ports 22,80,443,8000
+```
+
+### Windows
+
+```powershell
+python scanner_Service_Fingerprint.py --ports 22,80,443,8000
+```
+
+---
+
+# Safe Local Testing
+
+A temporary local HTTP server can be used to test TCP discovery and service fingerprinting.
+
+### Linux / macOS
+
+```bash
+python3 -m http.server 8000 --bind 0.0.0.0
+```
+
+### Windows
+
+```powershell
+python -m http.server 8000 --bind 0.0.0.0
+```
+
+Then run the scanner against the local machine or include port `8000` in a custom scan.
+
+Only perform network tests against systems you own or have explicit permission to assess.
 
 ---
 
 # Cross-Platform Support
 
-Cross-platform compatibility is an important project requirement.
-
-The scanner is being developed and tested for:
+Cross-platform compatibility remains a core requirement.
 
 | Operating System | Support Goal |
-| ---------------- | ------------ |
-| Linux            | Supported    |
-| Windows          | Supported    |
-| macOS            | Supported    |
+| --- | --- |
+| Linux | Supported |
+| Windows | Supported |
+| macOS | Supported |
 
-Different operating systems expose interfaces, routing information, ARP information, and neighbor tables differently. The scanner therefore uses OS-aware discovery logic rather than assuming Linux-specific commands or behavior.
+The implementation avoids assuming one operating system for core scanner behavior.
 
-Cross-platform behavior is tested through:
+Cross-platform techniques currently include:
 
-```text
-test_scanner_compatibility.py
-```
+* Scapy route lookup for active interface/network information
+* OS-aware neighbor-table collection
+* Python `socket` APIs for TCP scanning and hostname resolution
+* Cooperative cancellation using standard Python synchronization primitives
+* Standard-library TLS/socket support for fingerprinting
+* Platform-independent shared data contracts and coordinator logic
 
-Platform-specific functionality should remain isolated whenever possible so future changes do not break support for another operating system.
+Platform-specific functionality should remain isolated so a change for one operating system does not break the others.
 
 ---
 
 # Testing
 
-Run the scanner compatibility tests after modifying scanner functionality.
+The scanner currently has two important test areas.
+
+## Compatibility Tests
+
+```text
+test_scanner_compatibility.py
+```
+
+These tests verify existing scanner behavior and cross-platform assumptions.
 
 ### Linux / macOS
 
@@ -402,29 +773,70 @@ python3 test_scanner_compatibility.py
 python test_scanner_compatibility.py
 ```
 
-If the project is configured to use `pytest`, the test suite can also be executed using:
+## Sprint 2 Scanner Tests
 
-```bash
-python -m pytest
+```text
+test_scanner_sprint2.py
+test_scanner_lifecycle.py
 ```
 
-or:
+Sprint 2 tests cover areas such as:
+
+* Contract validation
+* Contract serialization
+* Device/host adapters
+* Port adapters
+* Manual target normalization
+* CIDR normalization
+* Coordinator behavior
+* Localhost scanning
+* Progress accounting
+* Cancellation behavior
+
+Run with pytest when available:
+
+### Linux / macOS
 
 ```bash
 python3 -m pytest
 ```
 
-depending on the operating system.
+### Windows
 
-Automated testing through GitHub Actions is also suitable for validating the scanner against Linux, Windows, and macOS environments.
+```powershell
+python -m pytest
+```
+
+The test suite should avoid public-network dependencies. Prefer localhost, mocks, fixtures, and controlled lab services.
+
+Automated CI should run compatible tests on Linux, Windows, and macOS.
+
+---
+
+# Error Handling
+
+Scanner-internal exceptions are converted at the coordinator/application boundary into structured `ScannerError` objects.
+
+Contract-supported error categories include the following; individual codes are emitted when the corresponding condition is implemented/encountered:
+
+```text
+INVALID_CONFIGURATION
+INVALID_TARGET
+DISCOVERY_FAILED
+SCAN_FAILED
+TIMEOUT
+CANCELLED
+UNSUPPORTED_PLATFORM
+INTERNAL_ERROR
+```
+
+This allows future backend and frontend code to handle failures consistently instead of depending on different raw exception types from each scanner module.
 
 ---
 
 # Deployment Direction
 
-The long-term deployment model is centered around a **web-based interface** rather than requiring users to directly interact with individual Python scripts.
-
-The proposed deployment architecture is:
+The long-term deployment model remains centered around a web-based client/server architecture.
 
 ```text
              User Browser
@@ -441,184 +853,203 @@ The proposed deployment architecture is:
           | Scanner Backend|
           +-------+--------+
                   |
+                  v
+          +----------------+
+          | Scan Service   |
+          +-------+--------+
+                  |
+                  v
+          +----------------+
+          | Coordinator    |
+          +-------+--------+
+                  |
         +---------+----------+
         |                    |
         v                    v
- Host Discovery        Port Scanner
+ Host Discovery        TCP Scanner
         |                    |
         +---------+----------+
                   |
                   v
-        Vulnerability Engine
+        Service Fingerprinting
                   |
                   v
-             Persistence
+       Future Vulnerability Engine
+                  |
+                  v
+              Persistence
 ```
 
-The web interface will allow an authorized user to remotely:
+The Sprint 2 coordinator and shared contracts provide the boundary needed for future backend/API work.
 
-* Start scans
-* Configure scan targets
-* View discovered hosts
-* View open ports
-* Review vulnerability findings
-* Review previous scans
-* Monitor scanner activity
+The web interface is expected to eventually support:
+
+* Starting scans
+* Configuring targets
+* Viewing discovered hosts
+* Viewing open ports
+* Monitoring lifecycle/progress
+* Cancelling scans
+* Reviewing service fingerprints
+* Reviewing vulnerability findings
+* Reviewing previous scans
+* Monitoring scanner activity
 
 ---
 
 ## Docker
 
-Docker may be used as an optional deployment method, particularly when the backend is hosted on a dedicated machine or server.
+Docker remains an optional deployment path rather than a hard requirement.
 
-Docker can provide:
+It may be useful when the backend is deployed as a persistent service because it provides:
 
 * Consistent dependency management
-* Reproducible deployments
+* Reproducible environments
 * Easier server installation
 * Isolation of application components
 * Simplified updates
 
-However, Docker is not required for all deployments.
+For a scanner running only on one personal computer, a normal Python/native installation may be simpler.
 
-For a scanner operating exclusively on one personal computer, a native application or normal Python installation may be simpler. Containerization becomes more valuable when the web interface and scanner backend are deployed as persistent services.
-
-Network discovery functionality must also be considered carefully when containerizing the scanner because the scanner needs appropriate access to the network being analyzed.
+Containerized deployment requires special consideration for network discovery because ARP and interface-level scanning need appropriate access to the host/network environment.
 
 ---
 
-# Planned Components
+# Planned Vulnerability Matching
 
-## Service Fingerprinting
+Service fingerprinting now produces the information needed for the next major scanner stage.
 
-After a port is discovered, the scanner will attempt to identify the service associated with that port.
+Future vulnerability matching is expected to consume:
 
-Examples could include:
-
-```text
-22/tcp   SSH
-80/tcp   HTTP
-443/tcp  HTTPS
-```
-
-Where possible, version information can then be collected for vulnerability analysis.
-
----
-
-## Vulnerability Matching
-
-Discovered software and service versions are intended to be compared against known vulnerability information.
-
-The vulnerability analysis layer is planned to use information such as:
-
+* Service name
+* Product
+* Version
+* Future CPE normalization
 * CVE identifiers
-* Affected products
-* Affected versions
-* CVSS scores
-* Vulnerability descriptions
-* Severity classifications
+* Affected-version information
+* CVSS score
+* Vulnerability description
+* Severity classification
 
-The exact matching mechanism will be developed independently from network discovery so vulnerability data sources can change without requiring the network scanner to be rewritten.
-
----
-
-## Persistence
-
-Scan results will eventually be stored so results can be compared over time.
-
-Potential stored information includes:
-
-* Scan timestamp
-* Target network
-* Discovered hosts
-* MAC addresses
-* Open ports
-* Detected services
-* Software versions
-* CVE matches
-* Severity scores
-* Scan status
-
-Persistence will also allow the web interface to display scan history rather than only the most recent scan.
+The vulnerability matching layer should remain separate from network discovery and service probing so vulnerability data sources can be changed without rewriting the scanner core.
 
 ---
 
-## Continuous Monitoring
+# Persistence
 
-The final scanner is intended to support more than one-time manual scans.
+Persistence has not yet been implemented.
 
-Potential scan triggers include:
+The shared `ScanResult` structure is intended to provide the storage-facing representation for future persistence work.
+
+Expected stored data includes:
+
+* Scan identifier
+* Scan configuration
+* Lifecycle state
+* Start/completion timestamps
+* Host observations
+* Port observations
+* Service/product/version data
+* Structured errors
+* Progress/final status
+* Future vulnerability findings and remediation state
+
+---
+
+# Continuous Monitoring
+
+Continuous monitoring remains planned rather than implemented.
+
+Potential triggers include:
 
 * User-requested scans
 * Scheduled scans
 * Periodic network scans
-* Detection of a newly connected device
+* Newly detected devices
 
-A newly discovered device could trigger a focused scan without requiring the scanner to perform a complete network scan every time.
+A future backend service can reuse `ScanConfiguration` and the coordinator so scheduled/event-driven scans follow the same execution path as manually requested scans.
 
 ---
 
 # Design Goals
 
-The project follows several core design goals.
-
 ### Modular
 
-Host discovery, port scanning, vulnerability analysis, persistence, and the UI should remain independently maintainable.
+Discovery, TCP scanning, fingerprinting, orchestration, vulnerability analysis, persistence, backend, and UI components should remain independently maintainable.
+
+### Stable Contracts
+
+Application layers should depend on shared scanner contracts instead of low-level `Device`, `PortResult`, socket, Scapy, or fingerprinting implementation details.
 
 ### Cross-Platform
 
-Core scanner functionality should operate on Linux, Windows, and macOS.
+Core scanner behavior must continue to support Linux, Windows, and macOS.
 
 ### Testable
 
-Scanner modules should be testable individually without requiring the entire application stack.
+Scanner stages should be independently testable, while the coordinator should provide integration tests for the complete implemented pipeline.
 
 ### Extensible
 
-Additional discovery mechanisms, vulnerability databases, fingerprinting methods, and scanning techniques should be addable without redesigning the entire scanner.
+Future vulnerability matching, databases, fingerprinting techniques, persistence backends, and scanning methods should be addable without redesigning existing scanner modules.
+
+### Observable
+
+Long-running scans should expose lifecycle state, progress, elapsed time, current work, and cancellation state.
+
+### Resilient
+
+Failed or cancelled scans should retain useful partial results whenever possible.
 
 ### Accessible
 
-Users should ultimately interact with the scanner through a web interface instead of needing direct knowledge of Python or command-line tools.
+Users should ultimately interact with the scanner through a web interface rather than needing direct knowledge of the Python implementation.
 
 ### Secure
 
-The application should restrict scanner control and results to authorized users and should only be used against networks where scanning permission has been granted.
+The scanner should only operate against authorized systems and networks, and future remote access should require appropriate authentication and authorization.
 
 ---
 
 # Development Roadmap
 
 ```text
-Host Discovery          [Implemented]
-       |
-       v
-TCP Port Scanning       [Implemented]
-       |
-       v
-Service Fingerprinting  [Planned]
-       |
-       v
-Vulnerability Matching  [Planned]
-       |
-       v
-CVSS / Severity         [Planned]
-       |
-       v
-Persistence             [Planned]
-       |
-       v
-Backend API             [Planned]
-       |
-       v
-Web Interface           [Planned]
-       |
-       v
-Continuous Monitoring   [Planned]
+Shared Scanner Contracts      [Implemented]
+        |
+        v
+Host Discovery                [Implemented]
+        |
+        v
+Target Normalization          [Implemented]
+        |
+        v
+TCP Port Scanning             [Implemented]
+        |
+        v
+Service Fingerprinting        [Implemented]
+        |
+        v
+Coordinator / Lifecycle       [Implemented]
+Progress / Cancellation       [Implemented]
+        |
+        v
+Backend Service / API         [Planned]
+        |
+        v
+Persistence                   [Planned]
+        |
+        v
+Vulnerability / CVE Matching  [Planned]
+        |
+        v
+CVSS / Severity               [Planned]
+        |
+        v
+Web Interface                 [Planned]
+        |
+        v
+Continuous Monitoring         [Planned]
 ```
-
-The modular structure allows development on later components without replacing the existing discovery and scanning functionality.
 
 ---
 
@@ -628,11 +1059,14 @@ When modifying scanner functionality:
 
 1. Maintain compatibility with **Linux, Windows, and macOS**.
 2. Avoid OS-specific behavior unless it is isolated behind platform detection.
-3. Keep scanner components modular.
-4. Run compatibility tests before submitting changes.
-5. Document new command-line options and dependencies.
-6. Avoid committing credentials, API keys, or environment-specific configuration.
-7. Only test network scanning functionality against authorized systems.
+3. Preserve the shared scanner data contracts unless a contract change is intentionally reviewed.
+4. Keep low-level scanner internals separated from backend/frontend/persistence interfaces.
+5. Prefer adapters over rewriting working scanner modules.
+6. Preserve lifecycle, progress, error, and cancellation behavior when adding new stages.
+7. Run compatibility and Sprint 2 tests before submitting changes.
+8. Document new command-line options, models, and dependencies.
+9. Avoid committing credentials, API keys, or environment-specific configuration.
+10. Only test network scanning functionality against systems where scanning is explicitly authorized.
 
 ---
 
@@ -642,7 +1076,7 @@ When modifying scanner functionality:
 
 Vulnerability Scanner
 
-The project is being developed collaboratively, with scanner, backend, frontend, testing, documentation, persistence, and deployment responsibilities divided across the development team while maintaining integration between each portion of the system.
+The project is being developed collaboratively, with scanner, backend, frontend, testing, documentation, persistence, and deployment responsibilities divided across the development team while maintaining stable integration boundaries between each portion of the system.
 
 ---
 
@@ -651,4 +1085,3 @@ The project is being developed collaboratively, with scanner, backend, frontend,
 A project license should be added before public distribution.
 
 Until a license is explicitly provided, the presence of the source code in this repository should not be interpreted as granting permission to redistribute or reuse it outside the terms established by the project authors.
-
