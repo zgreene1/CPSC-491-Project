@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .scanner_Host_Discovery import Device
+from scanner_Host_Discovery import Device
 
 COMMON_UDP_PORTS = (53, 67, 68, 69, 123, 137, 138, 161, 500, 514, 520, 5353)
 
