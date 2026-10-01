@@ -8,14 +8,10 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
-
 jobs:
   scanner-tests:
-    name: Scanner tests - ${{ matrix.os }}
+    name: Scanner tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -29,29 +25,28 @@ jobs:
       run:
         working-directory: Backend
 
-    env:
-      PYTHONUNBUFFERED: "1"
-
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.14"
 
-      - name: Install scanner dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install scapy
+          python -m pip install -r requirements.txt
+          python -m pip check
 
-      - name: Compile scanner source and tests
-        run: python -m compileall -q .
+      - name: Compile Python source
+        run: python -m compileall .
 
-      - name: Validate service signatures
-        run: python -c "import json, pathlib; json.loads(pathlib.Path('service_signatures.json').read_text(encoding='utf-8')); print('service_signatures.json is valid JSON')"
+      - name: Validate service signatures JSON
+        run: python -c "import json; json.load(open('service_signatures.json', encoding='utf-8')); print('service_signatures.json is valid')"
 
+<<<<<<< HEAD
       - name: Run scanner compatibility, Sprint 2, and lifecycle tests
         run: >-
           python -m unittest -v
@@ -64,3 +59,7 @@ jobs:
 
       - name: Run target validation tests
         run: python -m unittest -v test_target_validation.py
+=======
+      - name: Run scanner tests
+        run: python -m unittest discover -s . -p "test_scanner_*.py" -v
+>>>>>>> f1257b0 (fixed scanner tests via discovery instead of reference)
