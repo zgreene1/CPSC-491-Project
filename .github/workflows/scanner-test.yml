@@ -46,20 +46,5 @@ jobs:
       - name: Validate service signatures JSON
         run: python -c "import json; json.load(open('service_signatures.json', encoding='utf-8')); print('service_signatures.json is valid')"
 
-<<<<<<< HEAD
-      - name: Run scanner compatibility, Sprint 2, and lifecycle tests
-        run: >-
-          python -m unittest -v
-          test_scanner_compatibility.py
-          test_scanner_sprint2.py
-          test_scanner_lifecycle.py
-      - name: Run scanner compatibility tests
-        working-directory: Backend
-        run: python -m unittest -v test_scanner_compatibility.py
-
-      - name: Run target validation tests
-        run: python -m unittest -v test_target_validation.py
-=======
-      - name: Run scanner tests
-        run: python -m unittest discover -s . -p "test_scanner_*.py" -v
->>>>>>> f1257b0 (fixed scanner tests via discovery instead of reference)
+      - name: Run tests
+        run: python -m unittest discover -s . -p "test_*.py" -v
