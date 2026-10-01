@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 @dataclass
 class Device:
     ip: str
-    mac: str
+    mac: Optional[str]
     source: str
     last_seen: str
 
@@ -392,7 +392,15 @@ def merge_devices(*device_lists: Sequence[Device]) -> List[Device]:
 
     for device_list in device_lists:
         for device in device_list:
-            key = normalize_mac(device.mac)
+            normalized_mac = normalize_mac(device.mac) if device.mac else None
+            # ARP/neighbor observations normally have a MAC address.  Fall back
+            # to IPv4 identity for local/manual-style observations where a MAC
+            # is legitimately unknown.
+            key = (
+                f"mac:{normalized_mac}"
+                if normalized_mac
+                else f"ip:{device.ip}"
+            )
 
             if key in merged:
                 existing = merged[key]
@@ -404,7 +412,7 @@ def merge_devices(*device_lists: Sequence[Device]) -> List[Device]:
                 # unexpectedly mutated by normalization/merging.
                 merged[key] = Device(
                     ip=device.ip,
-                    mac=key,
+                    mac=normalized_mac,
                     source=device.source,
                     last_seen=device.last_seen,
                 )
@@ -421,7 +429,7 @@ def ensure_local_device(
         devices.append(
             Device(
                 ip=local_ip,
-                mac="local",
+                mac=None,
                 source="local_interface",
                 last_seen=datetime.now().isoformat(timespec="seconds"),
             )
@@ -490,9 +498,10 @@ def print_devices(devices: Sequence[Device]) -> None:
         devices,
         key=lambda d: ipaddress.ip_address(d.ip),
     ):
+        mac = device.mac or "unknown"
         print(
             f"{device.ip:<18} "
-            f"{device.mac:<20} "
+            f"{mac:<20} "
             f"{device.source}"
         )
 
