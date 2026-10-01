@@ -31,3 +31,6 @@ jobs:
 
       - name: Run scanner compatibility tests
         run: python -m unittest -v test_scanner_compatibility.py
+
+      - name: Run target validation tests
+        run: python -m unittest -v test_target_validation.py
