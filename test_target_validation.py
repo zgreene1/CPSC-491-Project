@@ -43,6 +43,31 @@ class TargetValidationTests(unittest.TestCase):
         self.assertTrue(result.valid)
         self.assertEqual(result.normalized_target, "scanner.example.com")
 
+    def test_ipv4_with_leading_and_trailing_spaces_is_normalized(self):
+        result = validate_target("  192.168.1.10  ")
 
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "ipv4")
+        self.assertEqual(result.normalized_target, "192.168.1.10")
+
+    def test_hostname_with_leading_and_trailing_spaces_is_normalized(self):
+        result = validate_target("  Scanner.Example.COM  ")
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "hostname")
+        self.assertEqual(result.normalized_target, "scanner.example.com")
+
+    def test_hostname_with_double_dot_is_rejected(self):
+        result = validate_target("scanner..example.com")
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error, "Invalid or unsupported hostname.")
+
+    def test_ipv4_with_too_few_octets_is_rejected(self):
+        result = validate_target("192.168.1")
+
+        self.assertFalse(result.valid)
+
+        
 if __name__ == "__main__":
     unittest.main()
