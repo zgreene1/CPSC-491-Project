@@ -1,6 +1,7 @@
 import argparse
 import ipaddress
 import socket
+
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,9 +9,12 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from scanner_Host_Discovery import (
     Device,
+    NetworkContext,
     discover_devices,
     print_devices,
 )
+import udp_port_scanner as udp_scanner
+import target_validator
 
 
 # Fixed common-port profile. These are only service hints; actual
@@ -539,6 +543,13 @@ def main() -> None:
         type=int,
         default=100,
         help="Maximum concurrent TCP connection attempts (default: 100)",
+    )
+
+    parser.add_argument(
+        "--proto",
+        choices=["tcp", "udp", "both"],
+        default="tcp",
+        help="Transport protocol: tcp, udp, or both (default: tcp)",
     )
 
     args = parser.parse_args()
