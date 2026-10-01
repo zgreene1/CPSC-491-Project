@@ -30,6 +30,7 @@ jobs:
         run: python -m pip install --upgrade pip scapy
 
       - name: Run scanner compatibility tests
+        working-directory: Backend
         run: python -m unittest -v test_scanner_compatibility.py
 
       - name: Run target validation tests
