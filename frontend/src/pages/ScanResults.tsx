@@ -10,8 +10,23 @@ import { Table, type Column, type SortDirection } from "../components/ui/Table";
 import * as resultsService from "../services/resultsService";
 import type { ScanRecord, Severity, Vulnerability } from "../types/scan";
 
-const severityRank: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-const severityFilters: Array<Severity | "all"> = ["all", "critical", "high", "medium", "low", "info"];
+const severityRank: Record<Severity, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1,
+  unclassified: 0,
+};
+const severityFilters: Array<Severity | "all"> = [
+  "all",
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+  "unclassified",
+];
 
 export function ScanResults() {
   const { scanId } = useParams<{ scanId: string }>();
@@ -38,8 +53,11 @@ export function ScanResults() {
           setScan(result);
         }
       })
-      .catch(() => {
-        if (!cancelled) setError("Failed to load scan results. The backend may be unavailable.");
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to load scan results. The backend may be unavailable.",
+        );
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);

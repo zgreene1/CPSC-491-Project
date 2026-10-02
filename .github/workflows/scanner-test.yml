@@ -27,7 +27,7 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip scapy
+        run: python -m pip install --upgrade pip -r Backend/requirements.txt
 
       - name: Run scanner compatibility tests
         working-directory: Backend
@@ -35,3 +35,7 @@ jobs:
 
       - name: Run target validation tests
         run: python -m unittest -v test_target_validation.py
+
+      - name: Run API server tests
+        working-directory: Backend
+        run: python -m unittest -v test_api_server.py

@@ -36,6 +36,13 @@ const config: Record<Severity, { label: string; dot: string; text: string; bg: s
     bg: "bg-severity-info/10",
     ring: "ring-severity-info/30",
   },
+  unclassified: {
+    label: "Unclassified",
+    dot: "bg-ink-400",
+    text: "text-ink-300",
+    bg: "bg-ink-700/40",
+    ring: "ring-ink-600",
+  },
 };
 
 export function SeverityBadge({ severity }: { severity: Severity }) {

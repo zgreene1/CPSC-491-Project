@@ -15,7 +15,7 @@ const aggregateCounts = severityOrder.reduce<Record<Severity, number>>(
     acc[severity] = mockScans.reduce((sum, scan) => sum + scan.severityCounts[severity], 0);
     return acc;
   },
-  { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+  { critical: 0, high: 0, medium: 0, low: 0, info: 0, unclassified: 0 },
 );
 
 const overallRisk = aggregateCounts.critical > 0 ? "High" : aggregateCounts.high > 0 ? "Elevated" : "Low";
