@@ -42,8 +42,16 @@ describe("validateScanConfig", () => {
     expect(errors.some((e) => e.field === "portRange")).toBe(true);
   });
 
-  it("flags an empty port range", () => {
-    const errors = validateScanConfig({ ...baseConfig, portRange: "" });
-    expect(errors).toContainEqual({ field: "portRange", message: "Port range is required." });
+  it("does not require a port range for a quick scan", () => {
+    const errors = validateScanConfig({ ...baseConfig, scanType: "quick", portRange: "" });
+    expect(errors.some((e) => e.field === "portRange")).toBe(false);
+  });
+
+  it("flags an empty port range for a custom scan", () => {
+    const errors = validateScanConfig({ ...baseConfig, scanType: "custom", portRange: "" });
+    expect(errors).toContainEqual({
+      field: "portRange",
+      message: "Port range is required for a custom scan.",
+    });
   });
 });
