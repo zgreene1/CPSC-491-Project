@@ -1,4 +1,3 @@
 .DS_Store
-.gitignore.local
 __pycache__/
 *.pyc
