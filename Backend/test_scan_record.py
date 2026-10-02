@@ -164,9 +164,11 @@ def test_save_allows_no_open_port_scan(database):
     assert port_count == 0
 
 def test_duplicate_scan_ids_rejected(database, sample_scan):
+    """Test that duplicate scan ids raise a DuplicateScanError"""
     repository = ScanRepository(database)
 
     repository.save(sample_scan)
 
     with pytest.raises(DuplicateScanError):
         repository.save(sample_scan)
+
