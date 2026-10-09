@@ -46,5 +46,6 @@ jobs:
       - name: Validate service signatures JSON
         run: python -c "import json; json.load(open('service_signatures.json', encoding='utf-8')); print('service_signatures.json is valid')"
 
-      - name: Run tests
-        run: python -m unittest discover -s . -p "test_*.py" -v
+      # pytest collects pytest-style tests and existing unittest.TestCase tests.
+      - name: Run all scanner tests
+        run: python -m pytest -q

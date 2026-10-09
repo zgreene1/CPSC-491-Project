@@ -1,23 +1,28 @@
 MIN_PORT = 1
 MAX_PORT = 65535
 
+
 class PortRangeValidationError(ValueError):
-    """Should trigger when a port range is invalid."""
+    """Raised when a TCP port range is invalid."""
+
 
 def validate_port_range(start_port: int, end_port: int) -> None:
-    if not isinstance(start_port, int) and not isinstance (end_port, int):
+    # bool is a subclass of int, so isinstance(value, int) alone is not enough.
+    # Check both endpoints before any numeric comparisons can raise TypeError.
+    if type(start_port) is not int or type(end_port) is not int:
         raise PortRangeValidationError(
-            f"Start and end ports must be integers.\n"
+            "Start and end ports must be integers."
         )
-    if start_port < MIN_PORT or start_port > MAX_PORT:
+
+    if not MIN_PORT <= start_port <= MAX_PORT:
         raise PortRangeValidationError(
-            f"Start port must be between {MIN_PORT} and {MAX_PORT}.\n"
-            )
-    if end_port < MIN_PORT or end_port > MAX_PORT:
+            f"Start port must be between {MIN_PORT} and {MAX_PORT}."
+        )
+    if not MIN_PORT <= end_port <= MAX_PORT:
         raise PortRangeValidationError(
-            f"End port must be between {MIN_PORT} and {MAX_PORT}.\n"
+            f"End port must be between {MIN_PORT} and {MAX_PORT}."
         )
     if start_port > end_port:
         raise PortRangeValidationError(
-            f"Start port must be less than end port.\n"
+            "Start port must not be greater than end port."
         )
