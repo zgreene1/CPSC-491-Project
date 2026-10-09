@@ -1,2 +1,2 @@
 scapy>=2.5.0
-python>=8.0.0
+pytest>=8.0.0
