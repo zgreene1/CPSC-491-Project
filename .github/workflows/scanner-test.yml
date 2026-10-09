@@ -26,6 +26,23 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Generate build version
+        shell: python
+        run: |
+          import os
+
+          short_sha = os.environ["GITHUB_SHA"][:7]
+          run_number = os.environ["GITHUB_RUN_NUMBER"]
+          build_version = f"0.2.{run_number}-{short_sha}"
+
+          print(f"Build version: {build_version}")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"BUILD_VERSION={build_version}\n")
+
+      - name: Show build version
+        run: python -c "import os; print('BUILD_VERSION=' + os.environ['BUILD_VERSION'])"
+
       - name: Install dependencies
         run: python -m pip install --upgrade pip scapy
 
