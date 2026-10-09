@@ -69,4 +69,4 @@ class ScanRepository:
                 ) from e
             raise
 
-        return scan.scan_id
+        return scan.scan_id 
