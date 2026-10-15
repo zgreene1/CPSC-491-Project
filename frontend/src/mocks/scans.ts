@@ -7,6 +7,7 @@ function countBySeverity(vulnerabilities: Vulnerability[]): Record<Severity, num
     medium: 0,
     low: 0,
     info: 0,
+    unclassified: 0,
   };
   for (const vuln of vulnerabilities) {
     counts[vuln.severity] += 1;

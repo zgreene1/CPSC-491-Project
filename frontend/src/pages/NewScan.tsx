@@ -6,6 +6,7 @@ import { Card, CardBody } from "../components/ui/Card";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { SelectField, TextField } from "../components/ui/FormField";
 import * as scanService from "../services/scanService";
+import type { ScanApiErrorKind } from "../services/scanService";
 import type { ScanConfig } from "../types/scan";
 
 const initialConfig: ScanConfig = {
@@ -19,7 +20,9 @@ export function NewScan() {
   const navigate = useNavigate();
   const [config, setConfig] = useState<ScanConfig>(initialConfig);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<{ kind: ScanApiErrorKind; message: string } | null>(
+    null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function updateField<K extends keyof ScanConfig>(key: K, value: ScanConfig[K]) {
@@ -39,10 +42,16 @@ export function NewScan() {
 
     setIsSubmitting(true);
     try {
-      const scan = await scanService.startScan(config);
-      navigate(`/scans/${scan.id}/progress`);
+      const { scanId } = await scanService.startScan(config);
+      navigate(`/scans/${scanId}/progress`);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Unable to start scan.");
+      if (err instanceof scanService.ScanApiError && err.kind === "validation") {
+        setFieldErrors({ target: err.message });
+      } else if (err instanceof scanService.ScanApiError) {
+        setSubmitError({ kind: err.kind, message: err.message });
+      } else {
+        setSubmitError({ kind: "server", message: "Unable to start scan." });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -95,7 +104,12 @@ export function NewScan() {
               />
             </div>
 
-            {submitError && <ErrorMessage title="Scan failed to start" message={submitError} />}
+            {submitError && (
+              <ErrorMessage
+                title={submitError.kind === "connection" ? "Backend unavailable" : "Scan failed to start"}
+                message={submitError.message}
+              />
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <Button type="submit" isLoading={isSubmitting}>
@@ -111,7 +125,8 @@ export function NewScan() {
               </Button>
             </div>
             <p className="text-xs text-ink-500">
-              Sprint 1 demo — this submits against mocked data. Sprint 2 wires this up to the real scan API.
+              Submits to the real scan API. Run the backend locally with{" "}
+              <code className="font-mono">python Backend/api_server.py</code>.
             </p>
           </form>
         </CardBody>
