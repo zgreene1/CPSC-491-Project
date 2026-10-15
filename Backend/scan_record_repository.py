@@ -29,7 +29,8 @@ class ScanRepository:
                         scan.scan_id,
                         scan.target,
                         scan.targeted_at,
-                        scan.status,
+                        scan.completed_at,
+                        scan.scan_status,
                         scan.host_count,
                         scan.open_port_count
                     ),
@@ -54,7 +55,7 @@ class ScanRepository:
                             result.mac,
                             result.port,
                             result.protocol,
-                            result.state,
+                            result.scan_state,
                             result.service_hint,
                             result.scanned_at,
                         )

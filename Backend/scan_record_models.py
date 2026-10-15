@@ -6,7 +6,7 @@ class ScanPortRecord:
     mac: str
     port: int
     protocol: str
-    state:str
+    scan_state: str
     service_hint: str
     scanned_at: str
 
@@ -16,6 +16,6 @@ class ScanRecord:
     target: str
     started_at: str
     completed_at: str
-    status: str
+    scan_status: str
     host_count: int
     open_port_count: int

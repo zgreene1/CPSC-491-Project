@@ -11,7 +11,7 @@ from .scan_record_repository import ScanRepository, DuplicateScanError
 def database(tmp_path):
     db_path = tmp_path / "test_scanner.db"
 
-    database = Database(tmp_path)
+    database = Database(db_path)
     database.initialize()
 
     return database
@@ -86,7 +86,7 @@ def test_save_persists_scan(database, sample_scan):
         ).fetchone()
 
     assert row is not None
-    assert row[0] == "test_scan_001"
+    assert row[0] == "test-scan-001"
     assert row[1] == "127.0.0.1"
     assert row[2] == "completed"
     assert row[3] == 1

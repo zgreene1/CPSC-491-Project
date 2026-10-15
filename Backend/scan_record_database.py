@@ -1,8 +1,9 @@
 import sqlite3
 from pathlib import Path
+from typing import Union
 
 class Database:
-    def __init__(self, path: self | Path):
+    def __init__(self, path: Union[str | Path]):
         self.path = str(path)
 
     def connect(self) -> sqlite3.Connection:
@@ -21,7 +22,7 @@ class Database:
                     scan_status TEXT NOT NULL,
                     host_count INTEGER NOT NULL DEFAULT 0,
                     open_port_count INTEGER NOT NULL DEFAULT 0
-                    )
+                    );
 
                 CREATE TABLE scan_ports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +33,7 @@ class Database:
                     protocol TEXT NOT NULL,
                     scan_state TEXT NOT NULL,
                     service_hint TEXT,
-                    scanned_at TEXT NOT NULL
+                    scanned_at TEXT NOT NULL,
 
                     FOREIGN KEY (scan_id) REFERENCES (scan_id)
                     ON DELETE CASCADE

@@ -5,7 +5,7 @@ class PortRangeValidationError(ValueError):
     """Should trigger when a port range is invalid."""
 
 def validate_port_range(start_port: int, end_port: int) -> None:
-    if not isinstance(start_port, int) and not isinstance (end_port, int):
+    if type(start_port) is not int or type(end_port) is not int:
         raise PortRangeValidationError(
             f"Start and end ports must be integers.\n"
         )
