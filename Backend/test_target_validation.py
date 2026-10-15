@@ -1,3 +1,4 @@
+
 import unittest
 
 from target_validation import validate_target
@@ -68,6 +69,43 @@ class TargetValidationTests(unittest.TestCase):
 
         self.assertFalse(result.valid)
 
-        
+    # SCRUM-71: Additional boundary and negative tests
+
+    def test_hostname_63_character_label_is_accepted(self):
+        hostname = "a" * 63 + ".example.com"
+        result = validate_target(hostname)
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "hostname")
+        self.assertEqual(result.normalized_target, hostname)
+
+    def test_hostname_64_character_label_is_rejected(self):
+        hostname = "a" * 64 + ".example.com"
+        result = validate_target(hostname)
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error, "Invalid or unsupported hostname.")
+
+    def test_hostname_trailing_dot_is_normalized(self):
+        result = validate_target("Scanner.Example.COM.")
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "hostname")
+        self.assertEqual(result.normalized_target, "scanner.example.com")
+
+    def test_hostname_over_253_characters_is_rejected(self):
+        hostname = ".".join(["a" * 63] * 4)
+        result = validate_target(hostname)
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error, "Invalid or unsupported hostname.")
+
+    def test_none_target_is_rejected(self):
+        result = validate_target(None)
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error, "Target cannot be empty.")
+
+
 if __name__ == "__main__":
     unittest.main()
