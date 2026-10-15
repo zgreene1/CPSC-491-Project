@@ -109,6 +109,14 @@ class ScannerCoordinator:
     def _refresh_elapsed_locked(self) -> None:
         if self._progress is None or self._started_monotonic is None:
             return
+        # A terminal scan has stopped running. Its elapsed duration must
+        # remain identical in live progress queries and the stored ScanResult.
+        if self._progress.state in (
+            ScanLifecycleState.COMPLETED,
+            ScanLifecycleState.FAILED,
+            ScanLifecycleState.CANCELLED,
+        ):
+            return
         self._progress.elapsed_seconds = round(
             max(0.0, time.monotonic() - self._started_monotonic),
             3,
@@ -231,6 +239,9 @@ class ScannerCoordinator:
                     cancellation_requested=self._cancel_event.is_set(),
                 )
             else:
+                # Capture the final elapsed time before marking a terminal
+                # state so later status polling cannot change the duration.
+                self._refresh_elapsed_locked()
                 self._progress.state = state
                 self._progress.current_host = None
                 self._progress.current_port = None
