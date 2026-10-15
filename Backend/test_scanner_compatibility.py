@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import scanner_Host_Discovery as host_discovery
 import scanner_Port_Scanner as port_scanner
+import udp_port_scanner as udp_scanner
 import scanner_Service_Fingerprint as service_fingerprint
 
 
@@ -128,6 +129,48 @@ class TcpScannerTests(unittest.TestCase):
         self.assertEqual(result.port, open_port)
         self.assertEqual(result.protocol, "tcp")
         self.assertEqual(result.state, "open")
+
+class UdpScannerTests(unittest.TestCase):
+    """Privilege-free mock tests for UDP port discovery and probe responses."""
+    def test_udp_scan_detects_local_responder(self):
+        """Verify UDP scanner detects an active responder on localhost."""
+        listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        listener.bind(("127.0.0.1", 0))
+        open_port = listener.getsockname()[1]
+
+        def respond_once():
+            try:
+                data, addr = listener.recvfrom(1024)
+                listener.sendto(b"PONG", addr)
+            finally:
+                listener.close()
+
+        threading.Thread(target=respond_once, daemon=True).start()
+
+        device = host_discovery.Device(
+            ip="127.0.0.1",
+            mac="local",
+            source="test",
+            last_seen="test",
+        )
+
+        result = udp_scanner.scan_udp_port(device, open_port, timeout=0.8)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.port, open_port)
+        self.assertEqual(result.protocol, "udp")
+        self.assertEqual(result.state, "open")
+
+    def test_udp_scan_silent_port_returns_none(self):
+        """Verify unhandled / silent UDP ports gracefully return None without raising."""
+        device = host_discovery.Device(
+            ip="127.0.0.1",
+            mac="local",
+            source="test",
+            last_seen="test",
+        )
+        # Scan a random closed port with a tight timeout
+        result = udp_scanner.scan_udp_port(device, 59999, timeout=0.1)
+        self.assertIsNone(result)
 
 
 # Service fingerprinting tests use local loopback listeners only. They do not

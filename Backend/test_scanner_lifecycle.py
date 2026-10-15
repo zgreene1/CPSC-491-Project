@@ -253,6 +253,138 @@ class ScannerLifecycleIntegrationTests(unittest.TestCase):
         fingerprint_mock.assert_not_called()
         json.loads(result.to_json())
 
+    def test_zero_open_ports_completes_without_identification(self) -> None:
+        """Verify a closed-port scan still reaches COMPLETED cleanly."""
+        coordinator = ScannerCoordinator(identify_services=True)
+        config = ScanConfiguration(
+            targets=["127.0.0.1"],
+            scan_mode="custom",
+            ports=[65000],
+            timeout_seconds=0.25,
+            discovery_enabled=False,
+            concurrency=2,
+        )
+
+        observed_states = []
+        original_set_state = coordinator._set_state
+
+        def record_state(state: ScanLifecycleState) -> None:
+            if not observed_states:
+                progress = coordinator.get_progress()
+                self.assertIsNotNone(progress)
+                self.assertEqual(progress.state, ScanLifecycleState.CREATED)
+                observed_states.append(progress.state)
+
+            observed_states.append(state)
+            original_set_state(state)
+
+        with (
+            patch.object(port_scanner, "scan_tcp_port", return_value=None),
+            patch.object(coordinator, "_set_state", side_effect=record_state),
+            patch("scanner_coordinator.fingerprint_services") as fingerprint_mock,
+        ):
+            result = coordinator.run(config)
+
+        observed_states.append(result.state)
+
+        self.assertEqual(
+            observed_states,
+            [
+                ScanLifecycleState.CREATED,
+                ScanLifecycleState.SCANNING,
+                ScanLifecycleState.COMPLETED,
+            ],
+        )
+        self.assertEqual(result.state, ScanLifecycleState.COMPLETED)
+        self.assertEqual(result.progress.state, ScanLifecycleState.COMPLETED)
+        self.assertEqual(len(result.hosts), 1)
+        self.assertEqual(result.hosts[0].ip, "127.0.0.1")
+        self.assertEqual(result.ports, [])
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.progress.hosts_discovered, 1)
+        self.assertEqual(result.progress.hosts_completed, 1)
+        self.assertEqual(result.progress.ports_completed, 1)
+        self.assertEqual(result.progress.total_ports, 1)
+        self.assertEqual(result.progress.percent_complete, 100.0)
+        self.assertIsNone(result.progress.current_host)
+        self.assertIsNone(result.progress.current_port)
+        fingerprint_mock.assert_not_called()
+
+        payload = json.loads(result.to_json())
+        self.assertEqual(payload["state"], "COMPLETED")
+        self.assertEqual(payload["ports"], [])
+
+    def test_scanner_failure_moves_scanning_to_failed_and_preserves_host(self) -> None:
+        """Verify an unrecoverable TCP scanner exception becomes FAILED."""
+        coordinator = ScannerCoordinator(identify_services=True)
+        config = ScanConfiguration(
+            targets=["127.0.0.1"],
+            scan_mode="custom",
+            ports=[65000],
+            timeout_seconds=0.25,
+            discovery_enabled=False,
+            concurrency=2,
+        )
+
+        observed_states = []
+        original_set_state = coordinator._set_state
+
+        def record_state(state: ScanLifecycleState) -> None:
+            if not observed_states:
+                progress = coordinator.get_progress()
+                self.assertIsNotNone(progress)
+                self.assertEqual(progress.state, ScanLifecycleState.CREATED)
+                observed_states.append(progress.state)
+
+            observed_states.append(state)
+            original_set_state(state)
+
+        with (
+            patch.object(
+                port_scanner,
+                "scan_tcp_port",
+                side_effect=RuntimeError("forced scanner failure"),
+            ),
+            patch.object(coordinator, "_set_state", side_effect=record_state),
+            patch("scanner_coordinator.fingerprint_services") as fingerprint_mock,
+        ):
+            result = coordinator.run(config)
+
+        observed_states.append(result.state)
+
+        self.assertEqual(
+            observed_states,
+            [
+                ScanLifecycleState.CREATED,
+                ScanLifecycleState.SCANNING,
+                ScanLifecycleState.FAILED,
+            ],
+        )
+        self.assertEqual(result.state, ScanLifecycleState.FAILED)
+        self.assertEqual(result.progress.state, ScanLifecycleState.FAILED)
+        self.assertEqual(len(result.hosts), 1)
+        self.assertEqual(result.hosts[0].ip, "127.0.0.1")
+        self.assertEqual(result.ports, [])
+        self.assertEqual(result.progress.hosts_discovered, 1)
+        self.assertEqual(result.progress.hosts_completed, 0)
+        self.assertEqual(result.progress.ports_completed, 0)
+        self.assertEqual(result.progress.total_ports, 1)
+        self.assertIsNone(result.progress.current_host)
+        self.assertIsNone(result.progress.current_port)
+
+        self.assertEqual(len(result.errors), 1)
+        error = result.errors[0]
+        self.assertEqual(error.code, "INTERNAL_ERROR")
+        self.assertEqual(error.stage, "scanning")
+        self.assertFalse(error.recoverable)
+        self.assertEqual(error.details["reason"], "forced scanner failure")
+        fingerprint_mock.assert_not_called()
+
+        payload = json.loads(result.to_json())
+        self.assertEqual(payload["state"], "FAILED")
+        self.assertEqual(payload["errors"][0]["code"], "INTERNAL_ERROR")
+        self.assertEqual(payload["errors"][0]["stage"], "scanning")
+
     def test_cancellation_moves_scanning_to_cancelled_and_preserves_progress(self) -> None:
         """Verify cooperative cancellation across coordinator and port scanner."""
         ports = list(range(20000, 20080))
