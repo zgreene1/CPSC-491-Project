@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union
 
 class Database:
-    def __init__(self, path: Union[str | Path]):
+    def __init__(self, path):
         self.path = str(path)
 
     def connect(self) -> sqlite3.Connection:
@@ -14,7 +14,7 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript("""
-                CREATE TABLE scans (
+                CREATE TABLE IF NOT EXISTS scans (
                     scan_id TEXT NOT NULL PRIMARY KEY,
                     target TEXT NOT NULL,
                     started_at TEXT NOT NULL,
@@ -22,9 +22,9 @@ class Database:
                     scan_status TEXT NOT NULL,
                     host_count INTEGER NOT NULL DEFAULT 0,
                     open_port_count INTEGER NOT NULL DEFAULT 0
-                    );
+                );
 
-                CREATE TABLE scan_ports (
+                CREATE TABLE IF NOT EXISTS scan_ports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     scan_id TEXT NOT NULL,
                     ip TEXT NOT NULL,
@@ -35,7 +35,7 @@ class Database:
                     service_hint TEXT,
                     scanned_at TEXT NOT NULL,
 
-                    FOREIGN KEY (scan_id) REFERENCES (scan_id)
+                    FOREIGN KEY (scan_id) REFERENCES scans(scan_id)
                     ON DELETE CASCADE
 
                     UNIQUE(scan_id, ip, port, protocol)
