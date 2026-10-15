@@ -1,4 +1,4 @@
-export type Severity = "critical" | "high" | "medium" | "low" | "info";
+export type Severity = "critical" | "high" | "medium" | "low" | "info" | "unclassified";
 
 export type ScanType = "quick" | "full" | "custom";
 
@@ -43,8 +43,12 @@ export interface ScanProgressState {
   scanId: string;
   status: ScanStatus;
   percentComplete: number;
-  currentTarget: string;
+  hostsDiscovered: number;
+  hostsCompleted: number;
+  portsCompleted: number;
+  totalPorts: number;
+  currentHost: string | null;
   currentPort: number | null;
   elapsedSeconds: number;
-  vulnerabilitiesFound: number;
+  cancellationRequested: boolean;
 }
