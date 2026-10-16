@@ -2,6 +2,9 @@ import sqlite3
 
 import pytest
 
+from contextlib import closing
+from dataclasses import replace
+
 from .scan_record_database import Database
 from .scan_record_models import ScanRecord, ScanPortRecord
 from .scan_record_repository import ScanRepository, DuplicateScanError
@@ -170,3 +173,108 @@ def test_duplicate_scan_ids_rejected(database, sample_scan):
 
     with pytest.raises(DuplicateScanError):
         repository.save(sample_scan)
+
+def test_scan_persists_after_reopen(database, sample_scan):
+    repository = ScanRepository(database)
+
+    repository.save(sample_scan)
+
+    reopened_database = Database(database.path)
+
+    with closing(reopened_database.connect()) as connection:
+        scan = connection.execute(
+            """
+            SELECT scan_id, target, scan_status
+            FROM scans
+            WHERE scan_id = ?
+            """,
+            (sample_scan.scan_id,)
+        ).fetchone()
+        
+        ports = connection.execute(
+            """
+            SELECT port
+            FROM scan_ports
+            WHERE scan_id = ?
+            ORDER BY port
+            """,
+            (sample_scan.scan_id,)
+        ).fetchall()
+
+        assert scan is not None
+        assert scan[0] == sample_scan.scan_id
+        assert scan[1] == sample_scan.target
+        assert scan[2] == sample_scan.scan_status
+
+        expected_ports = sorted(
+            port.port for port in sample_scan.ports
+        )
+
+        actual_ports = [row[0] for row in ports]
+
+        assert actual_ports == expected_ports
+
+def test_orphan_port_rejected(database):
+    with closing(database.connect()) as connection:
+
+        foreign_keys_enabled = connection.execute(
+            "PRAGMA foreign_keys"
+        ).fetchone()[0]
+
+        assert foreign_keys_enabled == 1
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO scan_ports (
+                    scan_id,
+                    ip,
+                    port,
+                    protocol,
+                    scan_state,
+                    scanned_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "nonexistent-scan",
+                    "127.0.0.1",
+                    80,
+                    "tcp",
+                    "open",
+                    "2026-10-15T17:00:00"
+                )
+            )
+
+        connection.rollback()
+
+        result = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM scan_ports
+            WHERE scan_id = ?
+            """,
+            ("nonexistent-scan",)
+        ).fetchone()[0]
+
+        assert result == 0
+
+def test_failed_save_rolls_back(database, sample_scan):
+    repository = ScanRepository(database)
+
+    invalid_port = replace(
+        sample_scan.ports[1],
+        port = 1000000
+    )
+
+    invalid_scan = replace(
+        sample_scan,
+        scan_id = "test-rollback-001",
+        ports = (
+            sample_scan.ports[0],
+            invalid_port
+        )
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repository.save(invalid_scan)
