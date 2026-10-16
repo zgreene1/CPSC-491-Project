@@ -218,7 +218,7 @@ def test_orphan_port_rejected(database):
     with closing(database.connect()) as connection:
 
         foreign_keys_enabled = connection.execute(
-            "PRAGMA foreign-keys"
+            "PRAGMA foreign_keys"
         ).fetchone()[0]
 
         assert foreign_keys_enabled == 1
@@ -259,7 +259,7 @@ def test_orphan_port_rejected(database):
 
         assert result == 0
 
-def test_failed_save_rolls_back():
+def test_failed_save_rolls_back(database, sample_scan):
     repository = ScanRepository(database)
 
     invalid_port = replace(
