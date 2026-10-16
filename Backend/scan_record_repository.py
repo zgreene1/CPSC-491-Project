@@ -28,7 +28,7 @@ class ScanRepository:
                     (
                         scan.scan_id,
                         scan.target,
-                        scan.targeted_at,
+                        scan.started_at,
                         scan.completed_at,
                         scan.scan_status,
                         scan.host_count,
