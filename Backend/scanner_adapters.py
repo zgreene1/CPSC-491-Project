@@ -10,6 +10,7 @@ from scanner_Port_Scanner import PortResult
 from udp_port_scanner import UDPPortResult
 from scanner_Service_Fingerprint import ServiceFingerprint
 from scanner_contracts import HostObservation, PortObservation
+from service_vulnerability_matcher import identify_software
 
 
 def _contract_mac(mac: Optional[str]) -> Optional[str]:
@@ -94,7 +95,7 @@ def apply_service_fingerprint(
     ):
         raise ValueError("Fingerprint does not match the supplied port observation.")
 
-    return PortObservation(
+    enriched = PortObservation(
         host_ip=observation.host_ip,
         host_mac=observation.host_mac,
         port=observation.port,
@@ -109,4 +110,7 @@ def apply_service_fingerprint(
         observed_at=observation.observed_at,
         state_reason=observation.state_reason,
         evidence_method=observation.evidence_method,
+        fingerprint_method=fingerprint.detection_method,
     )
+    enriched.software_id = identify_software(enriched)
+    return enriched

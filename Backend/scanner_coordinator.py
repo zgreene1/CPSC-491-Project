@@ -19,6 +19,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 from threading import Event, Lock
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -51,8 +52,12 @@ from scanner_contracts import (
     ScanProgress,
     ScanResult,
     ScannerError,
+    VulnerabilityFinding,
 )
 from scanner_target_normalizer import normalize_targets
+from service_vulnerability_matcher import (
+    CatalogError, DEFAULT_CATALOG, load_catalog, match_observations,
+)
 from udp_port_scanner import COMMON_UDP_PORTS, scan_udp_ports
 from scanner_adapters import udp_result_to_port_observation
 
@@ -66,6 +71,7 @@ class ScannerCoordinator:
         identify_services: bool = True,
         fingerprint_timeout: float = DEFAULT_FINGERPRINT_TIMEOUT,
         fingerprint_workers: int = DEFAULT_FINGERPRINT_WORKERS,
+        vulnerability_catalog_path: Optional[Path] = None,
     ) -> None:
         if fingerprint_timeout <= 0:
             raise ValueError("fingerprint timeout must be greater than 0")
@@ -77,6 +83,10 @@ class ScannerCoordinator:
         self.identify_services = identify_services
         self.fingerprint_timeout = fingerprint_timeout
         self.fingerprint_workers = fingerprint_workers
+        self.vulnerability_catalog_path = (
+            Path(vulnerability_catalog_path) if vulnerability_catalog_path is not None
+            else DEFAULT_CATALOG
+        )
 
         self._cancel_event = Event()
         self._lock = Lock()
@@ -231,6 +241,7 @@ class ScannerCoordinator:
         ports: Sequence[PortObservation],
         errors: Sequence[ScannerError],
         metadata: Optional[Dict[str, object]],
+        vulnerabilities: Sequence[VulnerabilityFinding] = (),
     ) -> ScanResult:
         completed_at = datetime.now().isoformat(timespec="seconds")
         with self._lock:
@@ -265,6 +276,7 @@ class ScannerCoordinator:
                 progress=progress,
                 errors=list(errors),
                 metadata=metadata,
+                vulnerabilities=list(vulnerabilities),
             )
             self._result = copy.deepcopy(result)
             return result
@@ -634,6 +646,42 @@ class ScannerCoordinator:
 
             metadata = self._context_metadata(context, discovery_network)
             metadata["service_identification_enabled"] = self.identify_services
+            vulnerabilities: List[VulnerabilityFinding] = []
+            if config.match_vulnerabilities:
+                self._set_state(ScanLifecycleState.MATCHING)
+                try:
+                    if not self.identify_services:
+                        metadata["vulnerability_matching"] = {
+                            "status": "skipped_identification_disabled", "findings": 0,
+                        }
+                    else:
+                        catalog = load_catalog(self.vulnerability_catalog_path)
+                        vulnerabilities = match_observations(ports, catalog)
+                        metadata["vulnerability_matching"] = {
+                            "status": "catalog_empty" if not catalog else "catalog_compared",
+                            "catalog_records": len(catalog),
+                            "findings": len(vulnerabilities),
+                            "disclaimer": "Potential matches only; absence of findings does not prove safety.",
+                        }
+                except CatalogError as exc:
+                    errors.append(ScannerError(
+                        code="VULNERABILITY_CATALOG_ERROR",
+                        message="Vulnerability matching was unavailable; port results were preserved.",
+                        stage="matching", details={"reason": str(exc)}, recoverable=True,
+                    ))
+                    metadata["vulnerability_matching"] = {"status": "catalog_error", "findings": 0}
+
+            if self._cancel_event.is_set():
+                errors.append(ScannerError(
+                    code="CANCELLED", message="Scan cancellation was requested.",
+                    stage="matching", recoverable=False,
+                ))
+                return self._build_result(
+                    config=config, state=ScanLifecycleState.CANCELLED,
+                    started_at=started_at, hosts=hosts, ports=ports,
+                    errors=errors, metadata=metadata, vulnerabilities=vulnerabilities,
+                )
+
             return self._build_result(
                 config=config,
                 state=ScanLifecycleState.COMPLETED,
@@ -642,6 +690,7 @@ class ScannerCoordinator:
                 ports=ports,
                 errors=errors,
                 metadata=metadata,
+                vulnerabilities=vulnerabilities,
             )
 
         except Exception as exc:

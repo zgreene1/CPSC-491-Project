@@ -47,6 +47,7 @@ def _build_configuration(payload: Dict[str, Any]) -> ScanConfiguration:
         concurrency=payload.get("concurrency", 100),
         protocol=payload.get("protocol", "tcp"),
         include_non_open=payload.get("include_non_open", False),
+        match_vulnerabilities=payload.get("match_vulnerabilities", False),
     )
 
 
