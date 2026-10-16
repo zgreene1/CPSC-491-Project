@@ -32,9 +32,34 @@ describe("validateScanConfig", () => {
     expect(errors.some((e) => e.field === "target")).toBe(true);
   });
 
+  it("flags a CIDR target with out-of-range octets", () => {
+    const errors = validateScanConfig({ ...baseConfig, target: "999.999.999.999/24" });
+    expect(errors.some((e) => e.field === "target")).toBe(true);
+  });
+
   it("flags an out-of-range port", () => {
     const errors = validateScanConfig({ ...baseConfig, portRange: "70000" });
     expect(errors.some((e) => e.field === "portRange")).toBe(true);
+  });
+
+  it("flags port 0 as out of range", () => {
+    const errors = validateScanConfig({ ...baseConfig, portRange: "0" });
+    expect(errors.some((e) => e.field === "portRange")).toBe(true);
+  });
+
+  it("flags port 65536 as out of range", () => {
+    const errors = validateScanConfig({ ...baseConfig, portRange: "65536" });
+    expect(errors.some((e) => e.field === "portRange")).toBe(true);
+  });
+
+  it("accepts port 1 as the lower boundary", () => {
+    const errors = validateScanConfig({ ...baseConfig, portRange: "1" });
+    expect(errors.some((e) => e.field === "portRange")).toBe(false);
+  });
+
+  it("accepts port 65535 as the upper boundary", () => {
+    const errors = validateScanConfig({ ...baseConfig, portRange: "65535" });
+    expect(errors.some((e) => e.field === "portRange")).toBe(false);
   });
 
   it("flags a reversed port range", () => {
