@@ -7,6 +7,7 @@ from typing import Optional
 
 from scanner_Host_Discovery import Device
 from scanner_Port_Scanner import PortResult
+from udp_port_scanner import UDPPortResult
 from scanner_Service_Fingerprint import ServiceFingerprint
 from scanner_contracts import HostObservation, PortObservation
 
@@ -61,6 +62,23 @@ def port_result_to_port_observation(result: PortResult) -> PortObservation:
         banner=None,
         confidence=None,
         observed_at=result.scanned_at or None,
+        state_reason=result.state_reason,
+        evidence_method=result.evidence_method,
+    )
+
+
+def udp_result_to_port_observation(result: UDPPortResult) -> PortObservation:
+    """Convert standalone UDP observations into the shared port contract."""
+    return PortObservation(
+        host_ip=result.ip,
+        host_mac=_contract_mac(result.mac),
+        port=result.port,
+        protocol="udp",
+        state=result.state,
+        service_hint=result.service_hint or None,
+        observed_at=result.scanned_at or None,
+        state_reason=result.state_reason,
+        evidence_method=result.evidence_method,
     )
 
 
@@ -89,4 +107,6 @@ def apply_service_fingerprint(
         banner=fingerprint.banner,
         confidence=fingerprint.confidence,
         observed_at=observation.observed_at,
+        state_reason=observation.state_reason,
+        evidence_method=observation.evidence_method,
     )

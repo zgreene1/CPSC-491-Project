@@ -127,6 +127,8 @@ class ScanConfiguration(JSONSerializable):
     include_local_host: bool = True
     concurrency: int = 100
     created_at: Optional[str] = None
+    protocol: str = "tcp"  # tcp, udp, both
+    include_non_open: bool = False
 
     def __post_init__(self) -> None:
         # Avoid mutable defaults while keeping the field declarations concise
@@ -174,6 +176,20 @@ class ScanConfiguration(JSONSerializable):
                     recoverable=False,
                 )
             )
+
+        if not isinstance(self.protocol, str) or self.protocol.strip().lower() not in {"tcp", "udp", "both"}:
+            errors.append(ScannerError(
+                code="INVALID_CONFIGURATION",
+                message="Protocol must be tcp, udp, or both.",
+                stage="configuration",
+            ))
+
+        if type(self.include_non_open) is not bool:
+            errors.append(ScannerError(
+                code="INVALID_CONFIGURATION",
+                message="include_non_open must be a Boolean.",
+                stage="configuration",
+            ))
 
         if self.discovery_network:
             try:
@@ -296,6 +312,8 @@ class PortObservation(JSONSerializable):
     banner: Optional[str] = None
     confidence: Optional[float] = None
     observed_at: Optional[str] = None
+    state_reason: Optional[str] = None
+    evidence_method: Optional[str] = None
 
 
 @dataclass
