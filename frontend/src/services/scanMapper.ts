@@ -38,7 +38,7 @@ interface ApiScanProgress {
   cancellation_requested: boolean;
 }
 
-interface ApiScanResult {
+export interface ApiScanResult {
   scan_id: string | null;
   configuration: { targets: string[] };
   state: string;
@@ -123,6 +123,7 @@ export function mapApiResultToScanRecord(result: ApiScanResult): ScanRecord {
     status: mapLifecycleState(result.state),
     totalFindings: vulnerabilities.length,
     severityCounts,
+    isDemo: false,
     config: {
       target: result.configuration.targets[0] ?? "",
       portRange: "",

@@ -141,6 +141,7 @@ export const mockScans: ScanRecord[] = [
     status: "completed",
     totalFindings: productionWebVulns.length,
     severityCounts: countBySeverity(productionWebVulns),
+    isDemo: true,
     config: {
       target: "10.0.1.0/24",
       portRange: "1-1024",
@@ -156,6 +157,7 @@ export const mockScans: ScanRecord[] = [
     status: "completed",
     totalFindings: internalApiVulns.length,
     severityCounts: countBySeverity(internalApiVulns),
+    isDemo: true,
     config: {
       target: "10.0.2.0/24",
       portRange: "1-65535",
@@ -171,6 +173,7 @@ export const mockScans: ScanRecord[] = [
     status: "failed",
     totalFindings: 0,
     severityCounts: countBySeverity([]),
+    isDemo: true,
     config: {
       target: "staging.internal.example.com",
       portRange: "1-1024",
