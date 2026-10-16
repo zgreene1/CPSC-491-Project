@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "source": "vendor_advisory_reviewed",
+  "entries": [
+    {
+      "id": "CVE-2021-41773",
+      "software_id": "apache:http_server",
+      "version_start_including": "2.4.49",
+      "version_end_excluding": "2.4.50",
+      "summary": "Apache HTTP Server 2.4.49 path traversal; impact depends on server configuration. Potential match only.",
+      "source_url": "https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-41773"
+    }
+  ]
+}

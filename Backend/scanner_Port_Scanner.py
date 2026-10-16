@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import ipaddress
 import socket
 
@@ -119,6 +120,8 @@ class PortResult:
     state: str
     service_hint: str
     scanned_at: str
+    state_reason: Optional[str] = None
+    evidence_method: Optional[str] = None
 
 
 PortProgressCallback = Callable[[Device, int, Optional[PortResult]], None]
@@ -217,41 +220,55 @@ def service_hint(port: int) -> str:
         return "unknown"
 
 
-def scan_tcp_port(
-    device: Device,
-    port: int,
-    timeout: float,
-) -> Optional[PortResult]:
-    """
-    Perform a TCP connect scan against one discovered host/port pair.
+def probe_tcp_port(device: Device, port: int, timeout: float) -> PortResult:
+    """Classify one TCP connect attempt; never infer filtered from silence.
 
-    Returns a PortResult only when the TCP connection succeeds. Closed,
-    filtered, and unreachable endpoints are omitted from the open-port list.
+    This detailed API retains closed and inconclusive outcomes. The legacy
+    ``scan_tcp_port`` adapter continues to return confirmed open ports only.
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("port must be an integer between 1 and 65535")
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
 
+    refused = {errno.ECONNREFUSED, 10061}  # Windows WSAECONNREFUSED
+    timeout_codes = {errno.ETIMEDOUT, 10060}  # Windows WSAETIMEDOUT
+    reason = "socket_error"
+    state = "unknown"
     try:
-        result = sock.connect_ex((device.ip, port))
-
-        if result != 0:
-            return None
-
-        return PortResult(
-            ip=device.ip,
-            mac=device.mac,
-            port=port,
-            protocol="tcp",
-            state="open",
-            service_hint=service_hint(port),
-            scanned_at=datetime.now().isoformat(timespec="seconds"),
-        )
-
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            error = sock.connect_ex((device.ip, port))
+        if error == 0:
+            state, reason = "open", "tcp_connect_success"
+        elif error in refused:
+            state, reason = "closed", "connection_refused"
+        elif error in timeout_codes:
+            reason = "tcp_timeout"
+    except (socket.timeout, TimeoutError):
+        reason = "tcp_timeout"
     except (OSError, ValueError):
-        return None
+        reason = "socket_error"
 
-    finally:
-        sock.close()
+    return PortResult(
+        ip=device.ip,
+        mac=device.mac,
+        port=port,
+        protocol="tcp",
+        state=state,
+        service_hint=service_hint(port),
+        scanned_at=datetime.now().isoformat(timespec="seconds"),
+        state_reason=reason,
+        evidence_method="tcp_connect",
+    )
+
+
+def scan_tcp_port(
+    device: Device, port: int, timeout: float,
+) -> Optional[PortResult]:
+    """Backward-compatible open-only TCP probe."""
+    outcome = probe_tcp_port(device, port, timeout)
+    return outcome if outcome.state == "open" else None
 
 
 def _targets(
@@ -269,6 +286,7 @@ def _scan_targets(
     workers: int,
     progress_callback: Optional[PortProgressCallback] = None,
     cancel_event: Optional[Event] = None,
+    include_non_open: bool = False,
 ) -> List[PortResult]:
     """Scan host/port targets with bounded concurrency and cooperative cancel."""
     if timeout <= 0:
@@ -299,7 +317,8 @@ def _scan_targets(
             except StopIteration:
                 return False
 
-            future = executor.submit(scan_tcp_port, device, port, timeout)
+            probe = probe_tcp_port if include_non_open else scan_tcp_port
+            future = executor.submit(probe, device, port, timeout)
             pending[future] = (device, port)
             return True
 
@@ -353,6 +372,7 @@ def scan_open_ports(
     workers: int = 100,
     progress_callback: Optional[PortProgressCallback] = None,
     cancel_event: Optional[Event] = None,
+    include_non_open: bool = False,
 ) -> List[PortResult]:
     """Scan the same requested TCP port set across all discovered devices."""
     if not devices or not ports:
@@ -364,6 +384,7 @@ def scan_open_ports(
         workers=workers,
         progress_callback=progress_callback,
         cancel_event=cancel_event,
+        include_non_open=include_non_open,
     )
 
 def related_ports_for(open_ports: Sequence[int]) -> List[int]:
@@ -388,6 +409,7 @@ def smart_scan_open_ports(
     total_callback: Optional[PortTotalCallback] = None,
     cancel_event: Optional[Event] = None,
     verbose: bool = True,
+    include_non_open: bool = False,
 ) -> List[PortResult]:
     """
     Adaptively discover likely open TCP services without scanning all 65,535 ports.
@@ -424,6 +446,7 @@ def smart_scan_open_ports(
         workers=workers,
         progress_callback=progress_callback,
         cancel_event=cancel_event,
+        include_non_open=include_non_open,
     )
 
     if cancel_event is not None and cancel_event.is_set():
@@ -431,7 +454,8 @@ def smart_scan_open_ports(
 
     open_by_ip = {}
     for result in stage_one:
-        open_by_ip.setdefault(result.ip, set()).add(result.port)
+        if result.state == "open":
+            open_by_ip.setdefault(result.ip, set()).add(result.port)
 
     stage_two_targets = []
     stage_two_counts = {}
@@ -476,6 +500,7 @@ def smart_scan_open_ports(
             workers=workers,
             progress_callback=progress_callback,
             cancel_event=cancel_event,
+            include_non_open=include_non_open,
         )
     else:
         stage_two = []
@@ -529,26 +554,30 @@ def print_port_results(
         f"{'IP ADDRESS':<18} "
         f"{'PORT':<8} "
         f"{'PROTO':<7} "
-        f"{'STATE':<8} "
+        f"{'STATE':<14} "
         f"{'SERVICE HINT'}"
     )
     print("-" * 72)
 
     if not results:
-        print("No open TCP ports found in the requested port set.")
+        print("No port observations found in the requested port set.")
     else:
         for result in results:
             print(
                 f"{result.ip:<18} "
                 f"{result.port:<8} "
                 f"{result.protocol:<7} "
-                f"{result.state:<8} "
+                f"{result.state:<14} "
                 f"{result.service_hint}"
             )
 
     print()
     print(f"Scanned {len(devices)} discovered host(s).")
-    print(f"Found {len(results)} open TCP port(s).")
+    print(f"Found {sum(result.state == 'open' for result in results)} open port(s).")
+    if any(result.state != "open" for result in results):
+        from collections import Counter
+        counts = Counter(result.state for result in results)
+        print("States: " + ", ".join(f"{key}={counts[key]}" for key in sorted(counts)))
 
 
 def main() -> None:
@@ -605,6 +634,11 @@ def main() -> None:
         help="Transport protocol: tcp, udp, or both (default: tcp)",
     )
 
+    parser.add_argument(
+        "--show-all-states", action="store_true",
+        help="Report classified non-open outcomes (default: open only)",
+    )
+
     args = parser.parse_args()
 
     normalized_port_spec = (args.ports or "smart").strip().lower()
@@ -634,31 +668,38 @@ def main() -> None:
         print("[!] No hosts were discovered; skipping port scan.")
         return
 
+    results = []
     try:
-        if smart_mode:
-            print(
-                f"[*] TCP scan  : smart adaptive discovery across "
-                f"{len(devices)} host(s)"
+        if args.proto in {"tcp", "both"}:
+            if smart_mode:
+                print(f"[*] TCP scan : smart adaptive discovery across {len(devices)} host(s)")
+                tcp_results = smart_scan_open_ports(
+                    devices, timeout=args.timeout, workers=args.workers,
+                    include_non_open=args.show_all_states,
+                )
+            else:
+                tcp_results = scan_open_ports(
+                    devices, ports, timeout=args.timeout, workers=args.workers,
+                    include_non_open=args.show_all_states,
+                )
+            results.extend(tcp_results)
+
+        if args.proto in {"udp", "both"}:
+            udp_ports = (
+                list(udp_scanner.COMMON_UDP_PORTS)
+                if normalized_port_spec in {"smart", "common"}
+                else ports
             )
-            results = smart_scan_open_ports(
-                devices=devices,
-                timeout=args.timeout,
-                workers=args.workers,
+            print(f"[*] UDP scan : {len(udp_ports)} port(s) across {len(devices)} host(s)")
+            udp_results = udp_scanner.scan_udp_ports(
+                devices, udp_ports, timeout=args.timeout,
+                workers=args.workers, include_non_open=args.show_all_states,
             )
-        else:
-            print(
-                f"[*] TCP scan  : {len(ports)} port(s) across "
-                f"{len(devices)} host(s)"
-            )
-            results = scan_open_ports(
-                devices=devices,
-                ports=ports,
-                timeout=args.timeout,
-                workers=args.workers,
-            )
+            results.extend(udp_results)
     except ValueError as exc:
         parser.error(str(exc))
 
+    results.sort(key=lambda item: (ipaddress.ip_address(item.ip), item.protocol, item.port))
     print_port_results(devices, results)
 
 

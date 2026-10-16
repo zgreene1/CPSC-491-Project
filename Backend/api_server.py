@@ -56,6 +56,9 @@ def _build_configuration(payload: Dict[str, Any]) -> ScanConfiguration:
         discovery_network=payload.get("discovery_network"),
         include_local_host=payload.get("include_local_host", True),
         concurrency=payload.get("concurrency", 100),
+        protocol=payload.get("protocol", "tcp"),
+        include_non_open=payload.get("include_non_open", False),
+        match_vulnerabilities=payload.get("match_vulnerabilities", False),
     )
 
 

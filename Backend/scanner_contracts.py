@@ -127,6 +127,9 @@ class ScanConfiguration(JSONSerializable):
     include_local_host: bool = True
     concurrency: int = 100
     created_at: Optional[str] = None
+    protocol: str = "tcp"  # tcp, udp, both
+    include_non_open: bool = False
+    match_vulnerabilities: bool = False  # Off by default; curated offline catalog
 
     def __post_init__(self) -> None:
         # Avoid mutable defaults while keeping the field declarations concise
@@ -174,6 +177,27 @@ class ScanConfiguration(JSONSerializable):
                     recoverable=False,
                 )
             )
+
+        if not isinstance(self.protocol, str) or self.protocol.strip().lower() not in {"tcp", "udp", "both"}:
+            errors.append(ScannerError(
+                code="INVALID_CONFIGURATION",
+                message="Protocol must be tcp, udp, or both.",
+                stage="configuration",
+            ))
+
+        if type(self.match_vulnerabilities) is not bool:
+            errors.append(ScannerError(
+                code="INVALID_CONFIGURATION",
+                message="match_vulnerabilities must be a Boolean.",
+                stage="configuration",
+            ))
+
+        if type(self.include_non_open) is not bool:
+            errors.append(ScannerError(
+                code="INVALID_CONFIGURATION",
+                message="include_non_open must be a Boolean.",
+                stage="configuration",
+            ))
 
         if self.discovery_network:
             try:
@@ -296,6 +320,25 @@ class PortObservation(JSONSerializable):
     banner: Optional[str] = None
     confidence: Optional[float] = None
     observed_at: Optional[str] = None
+    state_reason: Optional[str] = None
+    evidence_method: Optional[str] = None
+    software_id: Optional[str] = None  # Curated exact-product alias; not a CPE
+    fingerprint_method: Optional[str] = None
+
+
+@dataclass
+class VulnerabilityFinding(JSONSerializable):
+    """Potential version-range match, not a confirmed exploitable vulnerability."""
+    vulnerability_id: str
+    host_ip: str
+    port: int
+    protocol: str
+    software_id: str
+    observed_version: str
+    status: str
+    summary: str
+    source_url: str
+    fingerprint_confidence: Optional[float] = None
 
 
 @dataclass
@@ -325,4 +368,5 @@ class ScanResult(JSONSerializable):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    vulnerabilities: List[VulnerabilityFinding] = field(default_factory=list)
 

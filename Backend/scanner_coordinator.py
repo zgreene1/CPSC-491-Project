@@ -19,6 +19,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 from threading import Event, Lock
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -51,8 +52,14 @@ from scanner_contracts import (
     ScanProgress,
     ScanResult,
     ScannerError,
+    VulnerabilityFinding,
 )
 from scanner_target_normalizer import normalize_targets
+from service_vulnerability_matcher import (
+    CatalogError, DEFAULT_CATALOG, load_catalog, match_observations,
+)
+from udp_port_scanner import COMMON_UDP_PORTS, scan_udp_ports
+from scanner_adapters import udp_result_to_port_observation
 
 
 class ScannerCoordinator:
@@ -64,6 +71,7 @@ class ScannerCoordinator:
         identify_services: bool = True,
         fingerprint_timeout: float = DEFAULT_FINGERPRINT_TIMEOUT,
         fingerprint_workers: int = DEFAULT_FINGERPRINT_WORKERS,
+        vulnerability_catalog_path: Optional[Path] = None,
     ) -> None:
         if fingerprint_timeout <= 0:
             raise ValueError("fingerprint timeout must be greater than 0")
@@ -75,6 +83,10 @@ class ScannerCoordinator:
         self.identify_services = identify_services
         self.fingerprint_timeout = fingerprint_timeout
         self.fingerprint_workers = fingerprint_workers
+        self.vulnerability_catalog_path = (
+            Path(vulnerability_catalog_path) if vulnerability_catalog_path is not None
+            else DEFAULT_CATALOG
+        )
 
         self._cancel_event = Event()
         self._lock = Lock()
@@ -229,6 +241,7 @@ class ScannerCoordinator:
         ports: Sequence[PortObservation],
         errors: Sequence[ScannerError],
         metadata: Optional[Dict[str, object]],
+        vulnerabilities: Sequence[VulnerabilityFinding] = (),
     ) -> ScanResult:
         completed_at = datetime.now().isoformat(timespec="seconds")
         with self._lock:
@@ -263,6 +276,7 @@ class ScannerCoordinator:
                 progress=progress,
                 errors=list(errors),
                 metadata=metadata,
+                vulnerabilities=list(vulnerabilities),
             )
             self._result = copy.deepcopy(result)
             return result
@@ -297,6 +311,24 @@ class ScannerCoordinator:
 
         raise ValueError(f"Unsupported fixed scan mode: {mode}")
 
+    @staticmethod
+    def _resolved_udp_ports(config: ScanConfiguration) -> List[int]:
+        """UDP smart/common modes use the defined common UDP profile."""
+        if config.scan_mode in {"smart", "common"} and not config.ports and not config.port_spec:
+            return list(COMMON_UDP_PORTS)
+        if config.ports:
+            return sorted(set(config.ports))
+        if config.port_spec:
+            mode = config.port_spec.strip().lower()
+            if mode in {"smart", "common"}:
+                return list(COMMON_UDP_PORTS)
+            return parse_ports(config.port_spec)
+        if config.scan_mode == "all":
+            return list(range(1, 65536))
+        if config.scan_mode in {"smart", "common"}:
+            return list(COMMON_UDP_PORTS)
+        raise ValueError("Custom UDP scan requires explicit ports.")
+
     def run(self, configuration: ScanConfiguration) -> ScanResult:
         """Run one complete/partial scan and return a shared ScanResult."""
         self._cancel_event.clear()
@@ -309,6 +341,7 @@ class ScannerCoordinator:
             targets=[str(target).strip() for target in configuration.targets],
             scan_mode=(configuration.scan_mode or "").strip().lower(),
             ports=sorted(set(configuration.ports)),
+            protocol=configuration.protocol.strip().lower() if isinstance(configuration.protocol, str) else configuration.protocol,
         )
 
         self._host_check_counts = {}
@@ -445,57 +478,75 @@ class ScannerCoordinator:
             scan_devices = [host_observation_to_device(host) for host in hosts]
             self._set_state(ScanLifecycleState.SCANNING)
 
-            if config.scan_mode == "smart":
+            use_tcp = config.protocol in {"tcp", "both"}
+            use_udp = config.protocol in {"udp", "both"}
+            try:
+                udp_ports = self._resolved_udp_ports(config) if use_udp else []
+                fixed_tcp_ports = (
+                    self._resolved_fixed_ports(config)
+                    if use_tcp and config.scan_mode != "smart"
+                    else []
+                )
+            except (ValueError, argparse.ArgumentTypeError) as exc:
+                errors.append(ScannerError(
+                    code="INVALID_CONFIGURATION", message=str(exc),
+                    stage="configuration", recoverable=False,
+                ))
+                return self._build_result(
+                    config=config, state=ScanLifecycleState.FAILED,
+                    started_at=started_at, hosts=hosts, ports=ports,
+                    errors=errors, metadata=self._context_metadata(context, discovery_network),
+                )
+
+            udp_total = len(scan_devices) * len(udp_ports)
+            if use_tcp and config.scan_mode == "smart":
+                # Smart TCP adds work after stage 1; reserve UDP work when
+                # setting the combined total so progress remains consistent.
                 port_results = smart_scan_open_ports(
                     scan_devices,
                     timeout=config.timeout_seconds,
                     workers=config.concurrency,
                     progress_callback=self._on_port_checked,
-                    total_callback=self._set_total_ports,
+                    total_callback=lambda total: self._set_total_ports(total + udp_total),
                     cancel_event=self._cancel_event,
                     verbose=False,
+                    **({"include_non_open": True} if config.include_non_open else {}),
                 )
             else:
-                try:
-                    fixed_ports = self._resolved_fixed_ports(config)
-                except (ValueError, argparse.ArgumentTypeError) as exc:
-                    errors.append(
-                        ScannerError(
-                            code="INVALID_CONFIGURATION",
-                            message=str(exc),
-                            stage="configuration",
-                            recoverable=False,
-                        )
-                    )
-                    return self._build_result(
-                        config=config,
-                        state=ScanLifecycleState.FAILED,
-                        started_at=started_at,
-                        hosts=hosts,
-                        ports=ports,
-                        errors=errors,
-                        metadata=self._context_metadata(context, discovery_network),
-                    )
-
-                total = len(scan_devices) * len(fixed_ports)
-                self._set_total_ports(total)
+                self._set_total_ports(len(scan_devices) * len(fixed_tcp_ports) + udp_total)
                 self._host_expected_checks = {
-                    device.ip: len(fixed_ports)
+                    device.ip: len(fixed_tcp_ports) + len(udp_ports)
                     for device in scan_devices
                 }
-                port_results = scan_open_ports(
+                port_results = (
+                    scan_open_ports(
+                        scan_devices,
+                        fixed_tcp_ports,
+                        timeout=config.timeout_seconds,
+                        workers=config.concurrency,
+                        progress_callback=self._on_port_checked,
+                        cancel_event=self._cancel_event,
+                        **({"include_non_open": True} if config.include_non_open else {}),
+                    ) if use_tcp else []
+                )
+
+            # UDP scanning is separate from TCP scanning and runs only when
+            # requested. Cancellation after TCP prevents UDP work starting.
+            udp_results = (
+                scan_udp_ports(
                     scan_devices,
-                    fixed_ports,
+                    udp_ports,
                     timeout=config.timeout_seconds,
                     workers=config.concurrency,
                     progress_callback=self._on_port_checked,
                     cancel_event=self._cancel_event,
-                )
+                    include_non_open=config.include_non_open,
+                ) if use_udp and not self._cancel_event.is_set() else []
+            )
 
-            ports = [
-                port_result_to_port_observation(result)
-                for result in port_results
-            ]
+            ports = [port_result_to_port_observation(item) for item in port_results]
+            ports.extend(udp_result_to_port_observation(item) for item in udp_results)
+            ports.sort(key=lambda item: (item.host_ip, item.protocol, item.port))
 
             if config.scan_mode == "smart" and not self._cancel_event.is_set():
                 with self._lock:
@@ -522,11 +573,12 @@ class ScannerCoordinator:
                     metadata=self._context_metadata(context, discovery_network),
                 )
 
-            if self.identify_services and port_results:
+            open_tcp_results = [result for result in port_results if result.state == "open"]
+            if self.identify_services and open_tcp_results:
                 self._set_state(ScanLifecycleState.IDENTIFYING)
                 try:
                     fingerprints = fingerprint_services(
-                        port_results,
+                        open_tcp_results,
                         timeout=self.fingerprint_timeout,
                         workers=self.fingerprint_workers,
                         progress_callback=self._on_fingerprint,
@@ -594,6 +646,42 @@ class ScannerCoordinator:
 
             metadata = self._context_metadata(context, discovery_network)
             metadata["service_identification_enabled"] = self.identify_services
+            vulnerabilities: List[VulnerabilityFinding] = []
+            if config.match_vulnerabilities:
+                self._set_state(ScanLifecycleState.MATCHING)
+                try:
+                    if not self.identify_services:
+                        metadata["vulnerability_matching"] = {
+                            "status": "skipped_identification_disabled", "findings": 0,
+                        }
+                    else:
+                        catalog = load_catalog(self.vulnerability_catalog_path)
+                        vulnerabilities = match_observations(ports, catalog)
+                        metadata["vulnerability_matching"] = {
+                            "status": "catalog_empty" if not catalog else "catalog_compared",
+                            "catalog_records": len(catalog),
+                            "findings": len(vulnerabilities),
+                            "disclaimer": "Potential matches only; absence of findings does not prove safety.",
+                        }
+                except CatalogError as exc:
+                    errors.append(ScannerError(
+                        code="VULNERABILITY_CATALOG_ERROR",
+                        message="Vulnerability matching was unavailable; port results were preserved.",
+                        stage="matching", details={"reason": str(exc)}, recoverable=True,
+                    ))
+                    metadata["vulnerability_matching"] = {"status": "catalog_error", "findings": 0}
+
+            if self._cancel_event.is_set():
+                errors.append(ScannerError(
+                    code="CANCELLED", message="Scan cancellation was requested.",
+                    stage="matching", recoverable=False,
+                ))
+                return self._build_result(
+                    config=config, state=ScanLifecycleState.CANCELLED,
+                    started_at=started_at, hosts=hosts, ports=ports,
+                    errors=errors, metadata=metadata, vulnerabilities=vulnerabilities,
+                )
+
             return self._build_result(
                 config=config,
                 state=ScanLifecycleState.COMPLETED,
@@ -602,6 +690,7 @@ class ScannerCoordinator:
                 ports=ports,
                 errors=errors,
                 metadata=metadata,
+                vulnerabilities=vulnerabilities,
             )
 
         except Exception as exc:
