@@ -115,7 +115,7 @@ def test_save_persists_scan_ports(database, sample_scan):
         ).fetchall()
 
     assert len(rows) == 2
-    assert rows[0][0] == "test_scan_001"
+    assert rows[0][0] == "127.0.0.1"
     assert rows[0][1] == 22
     assert rows[0][2] == "tcp"
     assert rows[0][3] == "open"
