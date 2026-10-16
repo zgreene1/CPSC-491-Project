@@ -131,7 +131,7 @@ def test_save_allows_no_open_port_scan(database):
         target="127.0.0.1",
         started_at="2026-10-01T16:00:00",
         completed_at="2026-10-01T16:00:02",
-        status="completed",
+        scan_status="completed",
         host_count=1,
         open_port_count=0,
         ports=(),

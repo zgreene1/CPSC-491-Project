@@ -19,3 +19,4 @@ class ScanRecord:
     scan_status: str
     host_count: int
     open_port_count: int
+    ports: Tuple[ScanPortRecord, ...] = ()
