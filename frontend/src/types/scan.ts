@@ -32,6 +32,8 @@ export interface ScanSummary {
   status: ScanStatus;
   totalFindings: number;
   severityCounts: Record<Severity, number>;
+  /** True for the seeded Sprint 1 example scans; false for real backend scans. */
+  isDemo: boolean;
 }
 
 export interface ScanRecord extends ScanSummary {

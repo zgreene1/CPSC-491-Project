@@ -1,27 +1,90 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorMessage } from "../components/ui/ErrorMessage";
+import { LoadingOverlay } from "../components/ui/LoadingIndicator";
 import { SeverityBadge } from "../components/ui/SeverityBadge";
+import { SourcePill } from "../components/ui/SourcePill";
 import { StatusPill } from "../components/ui/StatusPill";
 import { PageContainer } from "../components/layout/PageContainer";
-import { latestScan, mockScans } from "../mocks/scans";
-import type { Severity } from "../types/scan";
+import * as historyService from "../services/historyService";
+import type { ScanRecord, Severity } from "../types/scan";
 
 const severityOrder: Severity[] = ["critical", "high", "medium", "low"];
 
-const totalFindings = mockScans.reduce((sum, scan) => sum + scan.totalFindings, 0);
-const aggregateCounts = severityOrder.reduce<Record<Severity, number>>(
-  (acc, severity) => {
-    acc[severity] = mockScans.reduce((sum, scan) => sum + scan.severityCounts[severity], 0);
-    return acc;
-  },
-  { critical: 0, high: 0, medium: 0, low: 0, info: 0, unclassified: 0 },
-);
-
-const overallRisk = aggregateCounts.critical > 0 ? "High" : aggregateCounts.high > 0 ? "Elevated" : "Low";
+function computeAggregateCounts(scans: ScanRecord[]): Record<Severity, number> {
+  return severityOrder.reduce<Record<Severity, number>>(
+    (acc, severity) => {
+      acc[severity] = scans.reduce((sum, scan) => sum + scan.severityCounts[severity], 0);
+      return acc;
+    },
+    { critical: 0, high: 0, medium: 0, low: 0, info: 0, unclassified: 0 },
+  );
+}
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [scans, setScans] = useState<ScanRecord[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  function load() {
+    setIsLoading(true);
+    setError(null);
+    historyService
+      .getScanHistory()
+      .then(setScans)
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Failed to load dashboard data."),
+      )
+      .finally(() => setIsLoading(false));
+  }
+
+  useEffect(load, []);
+
+  if (isLoading) {
+    return (
+      <PageContainer title="Dashboard">
+        <LoadingOverlay label="Loading dashboard…" />
+      </PageContainer>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageContainer title="Dashboard">
+        <ErrorMessage message={error} onRetry={load} />
+      </PageContainer>
+    );
+  }
+
+  if (!scans || scans.length === 0) {
+    return (
+      <PageContainer title="Dashboard" description="Overview of your scanning activity and current risk posture.">
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="No scans yet"
+              description="Run your first scan to see results and risk summary here."
+              action={
+                <Button size="sm" onClick={() => navigate("/scans/new")}>
+                  Start a scan
+                </Button>
+              }
+            />
+          </CardBody>
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  const totalFindings = scans.reduce((sum, scan) => sum + scan.totalFindings, 0);
+  const aggregateCounts = computeAggregateCounts(scans);
+  const overallRisk = aggregateCounts.critical > 0 ? "High" : aggregateCounts.high > 0 ? "Elevated" : "Low";
+  const latestScan = scans[0];
+  const recentScans = scans.slice(0, 5);
   const criticalAlerts = latestScan.vulnerabilities.filter(
     (v) => v.severity === "critical" || v.severity === "high",
   );
@@ -45,7 +108,7 @@ export function Dashboard() {
             </Button>
           </CardHeader>
           <CardBody className="divide-y divide-ink-750 p-0">
-            {mockScans.map((scan) => (
+            {recentScans.map((scan) => (
               <button
                 key={scan.id}
                 onClick={() => navigate(`/scans/${scan.id}/results`)}
@@ -58,6 +121,7 @@ export function Dashboard() {
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-ink-400">{scan.totalFindings} findings</span>
                   <StatusPill status={scan.status} />
+                  <SourcePill isDemo={scan.isDemo} />
                 </div>
               </button>
             ))}
@@ -81,7 +145,7 @@ export function Dashboard() {
               {overallRisk}
             </div>
             <p className="text-sm text-ink-400">
-              Based on {mockScans.length} scans and {totalFindings} total findings.
+              Based on {scans.length} scans and {totalFindings} total findings.
             </p>
             <Button variant="secondary" size="sm" onClick={() => navigate("/reports")}>
               View risk summary
@@ -93,7 +157,10 @@ export function Dashboard() {
       <Card>
         <CardHeader>
           <h2 className="font-[Space_Grotesk] text-base font-semibold text-ink-50">Alerts</h2>
-          <span className="text-xs text-ink-500">From latest scan · {latestScan.target}</span>
+          <span className="flex items-center gap-2 text-xs text-ink-500">
+            From latest scan · {latestScan.target}
+            <SourcePill isDemo={latestScan.isDemo} />
+          </span>
         </CardHeader>
         <CardBody className="space-y-2">
           {criticalAlerts.length === 0 ? (

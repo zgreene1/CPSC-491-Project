@@ -3,8 +3,9 @@
 This module is intentionally a thin adapter: all real scanning logic stays in
 scanner_coordinator.py / scanner_contracts.py. Its only job is to expose that
 Python interface over HTTP so the frontend (running in a browser) can start a
-scan, poll its progress, and fetch its results, speaking the shared JSON
-contracts documented in "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md".
+scan, poll its progress, fetch its results, and list all known scans,
+speaking the shared JSON contracts documented in
+"DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md".
 
 Run directly for local development:
 
@@ -12,6 +13,10 @@ Run directly for local development:
 
 The server listens on http://127.0.0.1:8000 by default (override with the
 PORT environment variable).
+
+Scan state lives only in this process's memory — restarting the server
+clears all scan history. That's an accepted limitation for now; there's no
+persistence layer yet.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from __future__ import annotations
 import os
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypedDict
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -30,8 +35,14 @@ from scanner_coordinator import ScannerCoordinator
 app = Flask(__name__)
 CORS(app)
 
+
+class ScanEntry(TypedDict):
+    coordinator: ScannerCoordinator
+    config: ScanConfiguration
+
+
 _scans_lock = threading.Lock()
-_scans: Dict[str, ScannerCoordinator] = {}
+_scans: Dict[str, ScanEntry] = {}
 
 
 def _build_configuration(payload: Dict[str, Any]) -> ScanConfiguration:
@@ -48,9 +59,34 @@ def _build_configuration(payload: Dict[str, Any]) -> ScanConfiguration:
     )
 
 
-def _get_coordinator(scan_id: str) -> Optional[ScannerCoordinator]:
+def _get_entry(scan_id: str) -> Optional[ScanEntry]:
     with _scans_lock:
         return _scans.get(scan_id)
+
+
+def _serialize_entry(scan_id: str, entry: ScanEntry) -> Dict[str, Any]:
+    """Serialize one scan as a ScanResult-shaped payload, even if it hasn't
+    finished yet (and so has no real ScanResult from the coordinator)."""
+    coordinator = entry["coordinator"]
+    config = entry["config"]
+
+    result = coordinator.get_result()
+    if result is not None:
+        return result.to_dict()
+
+    progress = coordinator.get_progress()
+    return {
+        "scan_id": scan_id,
+        "configuration": config.to_dict(),
+        "state": progress.state.value if progress else "CREATED",
+        "started_at": config.created_at,
+        "completed_at": None,
+        "hosts": [],
+        "ports": [],
+        "progress": progress.to_dict() if progress else None,
+        "errors": [],
+        "metadata": None,
+    }
 
 
 @app.post("/api/scans")
@@ -65,7 +101,7 @@ def start_scan():
 
     coordinator = ScannerCoordinator()
     with _scans_lock:
-        _scans[config.scan_id] = coordinator
+        _scans[config.scan_id] = {"coordinator": coordinator, "config": config}
 
     thread = threading.Thread(target=coordinator.run, args=(config,), daemon=True)
     thread.start()
@@ -73,13 +109,24 @@ def start_scan():
     return jsonify({"scan_id": config.scan_id}), 202
 
 
+@app.get("/api/scans")
+def list_scans():
+    with _scans_lock:
+        entries = list(_scans.items())
+
+    scans = [_serialize_entry(scan_id, entry) for scan_id, entry in entries]
+    scans.sort(key=lambda scan: scan.get("started_at") or "", reverse=True)
+
+    return jsonify({"scans": scans})
+
+
 @app.get("/api/scans/<scan_id>/progress")
 def get_progress(scan_id: str):
-    coordinator = _get_coordinator(scan_id)
-    if coordinator is None:
+    entry = _get_entry(scan_id)
+    if entry is None:
         return jsonify({"error": "Scan not found."}), 404
 
-    progress = coordinator.get_progress()
+    progress = entry["coordinator"].get_progress()
     if progress is None:
         return jsonify({"error": "Scan has not started."}), 404
 
@@ -88,11 +135,11 @@ def get_progress(scan_id: str):
 
 @app.get("/api/scans/<scan_id>/results")
 def get_results(scan_id: str):
-    coordinator = _get_coordinator(scan_id)
-    if coordinator is None:
+    entry = _get_entry(scan_id)
+    if entry is None:
         return jsonify({"error": "Scan not found."}), 404
 
-    result = coordinator.get_result()
+    result = entry["coordinator"].get_result()
     if result is None:
         return jsonify({"status": "running"}), 202
 
