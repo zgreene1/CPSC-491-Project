@@ -151,7 +151,8 @@ def get_results(scan_id: str):
 
 def main() -> None:
     port = int(os.environ.get("PORT", 8000))
-    app.run(host="127.0.0.1", port=port, threaded=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    app.run(host=host, port=port, threaded=True)
 
 
 if __name__ == "__main__":
