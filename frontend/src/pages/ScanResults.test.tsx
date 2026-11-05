@@ -39,6 +39,7 @@ const twoFindingScan: ScanRecord = {
       cvss: 10.0,
       description: "Log4Shell — unauthenticated remote code execution.",
       remediation: "Upgrade Log4j to 2.17.1+.",
+      matches: [],
     },
     {
       id: "vuln-2",
@@ -50,6 +51,7 @@ const twoFindingScan: ScanRecord = {
       cvss: 3.1,
       description: "Anonymous FTP login is enabled.",
       remediation: "Disable anonymous authentication.",
+      matches: [],
     },
   ],
 };

@@ -1,12 +1,15 @@
-import type { ScanProgressState, ScanRecord, ScanStatus, Vulnerability } from "../types/scan";
+import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Vulnerability } from "../types/scan";
 
 /**
  * Maps the shared backend contracts (see
  * "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md") onto the
- * frontend's domain types. The backend does not yet perform CVE/vulnerability
- * matching (see Backend/README.md "In Development / Planned"), so every real
- * port observation is surfaced as "unclassified" rather than inventing a
- * severity/CVE/CVSS the backend hasn't actually determined.
+ * frontend's domain types. The backend's vulnerability matcher is real and
+ * wired in (see Backend/service_vulnerability_matcher.py), but it has no
+ * concept of severity or CVSS, and its catalog is currently empty — so every
+ * real port observation keeps surfacing severity as "unclassified" rather
+ * than inventing a level the backend hasn't actually determined. Real
+ * catalog matches (once the catalog has entries) show up via the `matches`
+ * field on each Vulnerability row.
  */
 
 interface ApiPortObservation {
@@ -22,6 +25,19 @@ interface ApiPortObservation {
   banner: string | null;
   confidence: number | null;
   observed_at: string | null;
+}
+
+interface ApiVulnerabilityFinding {
+  vulnerability_id: string;
+  host_ip: string;
+  port: number;
+  protocol: string;
+  software_id: string;
+  observed_version: string;
+  status: string;
+  summary: string;
+  source_url: string;
+  fingerprint_confidence: number | null;
 }
 
 interface ApiScanProgress {
@@ -46,6 +62,7 @@ export interface ApiScanResult {
   completed_at: string | null;
   ports: ApiPortObservation[];
   progress: ApiScanProgress;
+  vulnerabilities?: ApiVulnerabilityFinding[];
 }
 
 const LIFECYCLE_TO_STATUS: Record<string, ScanStatus> = {
@@ -86,26 +103,61 @@ function describeService(port: ApiPortObservation): string {
   return port.service ?? port.service_hint ?? "unknown";
 }
 
-function mapPortToVulnerability(port: ApiPortObservation): Vulnerability {
+function mapVulnerabilityFinding(finding: ApiVulnerabilityFinding): PotentialMatch {
+  return {
+    vulnerabilityId: finding.vulnerability_id,
+    status: finding.status,
+    summary: finding.summary,
+    sourceUrl: finding.source_url,
+    confidence: finding.fingerprint_confidence,
+  };
+}
+
+function portKey(hostIp: string, port: number, protocol: string): string {
+  return `${hostIp}|${port}|${protocol}`;
+}
+
+function describeMatches(matches: PotentialMatch[]): string {
+  if (matches.length === 0) return "";
+  const ids = matches.map((match) => match.vulnerabilityId).join(", ");
+  return ` Potential catalog match: ${ids}.`;
+}
+
+function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatch[]): Vulnerability {
+  const baseDescription = port.banner
+    ? `Open port detected. Observed banner: ${port.banner}`
+    : "Open port detected. Vulnerability matching is not implemented yet.";
+
   return {
     id: `${port.host_ip}-${port.port}`,
-    cve: "Not yet assessed",
+    cve: matches[0]?.vulnerabilityId ?? "Not yet assessed",
     severity: "unclassified",
     host: port.host_ip,
     port: port.port,
     service: describeService(port),
     cvss: 0,
-    description: port.banner
-      ? `Open port detected. Observed banner: ${port.banner}`
-      : "Open port detected. Vulnerability matching is not implemented yet.",
-    remediation: "No automated remediation guidance available yet — CVE/vulnerability matching is planned for a later sprint.",
+    description: `${baseDescription}${describeMatches(matches)}`,
+    remediation: matches.length > 0
+      ? "A potential version-range match was found against the vulnerability catalog — this is not a confirmed exploit. Review the source reference below and verify before acting."
+      : "No automated remediation guidance available yet — the vulnerability catalog has no entries for this service/version.",
+    matches,
   };
 }
 
 export function mapApiResultToScanRecord(result: ApiScanResult): ScanRecord {
+  const matchesByPort = new Map<string, PotentialMatch[]>();
+  for (const finding of result.vulnerabilities ?? []) {
+    const key = portKey(finding.host_ip, finding.port, finding.protocol);
+    const existing = matchesByPort.get(key) ?? [];
+    existing.push(mapVulnerabilityFinding(finding));
+    matchesByPort.set(key, existing);
+  }
+
   const vulnerabilities = result.ports
     .filter((port) => port.state === "open")
-    .map(mapPortToVulnerability);
+    .map((port) =>
+      mapPortToVulnerability(port, matchesByPort.get(portKey(port.host_ip, port.port, port.protocol)) ?? []),
+    );
 
   const severityCounts = {
     critical: 0,

@@ -13,6 +13,21 @@ export interface ScanConfig {
   scanDepth: ScanDepth;
 }
 
+/**
+ * A real match from the backend's vulnerability catalog against an observed
+ * service/version. "Potential" because it's a version-range match, not a
+ * confirmed exploit — the backend never claims otherwise (see
+ * Backend/service_vulnerability_matcher.py). No severity/CVSS here: the
+ * backend doesn't produce that data yet.
+ */
+export interface PotentialMatch {
+  vulnerabilityId: string;
+  status: string;
+  summary: string;
+  sourceUrl: string;
+  confidence: number | null;
+}
+
 export interface Vulnerability {
   id: string;
   cve: string;
@@ -23,6 +38,8 @@ export interface Vulnerability {
   cvss: number;
   description: string;
   remediation: string;
+  /** Real catalog matches for this host/port, if any. Empty for demo data. */
+  matches: PotentialMatch[];
 }
 
 export interface ScanSummary {

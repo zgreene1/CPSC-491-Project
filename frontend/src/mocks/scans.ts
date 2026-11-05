@@ -27,6 +27,7 @@ const productionWebVulns: Vulnerability[] = [
     description:
       "A malicious backdoor was introduced into xz-utils 5.6.0/5.6.1 that allows remote code execution via a crafted SSH connection.",
     remediation: "Downgrade to xz-utils 5.4.x or apply the vendor patch immediately and rotate SSH host keys.",
+    matches: [],
   },
   {
     id: "vuln-2",
@@ -39,6 +40,7 @@ const productionWebVulns: Vulnerability[] = [
     description:
       "HTTP/2 Rapid Reset allows a remote attacker to cause denial of service via rapid stream creation and cancellation.",
     remediation: "Upgrade nginx to a patched release and enable stream rate limiting at the load balancer.",
+    matches: [],
   },
   {
     id: "vuln-3",
@@ -50,6 +52,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 8.8,
     description: "Heap buffer overflow in libwebp image processing can lead to remote code execution.",
     remediation: "Update libwebp and any dependent image processing libraries to the patched version.",
+    matches: [],
   },
   {
     id: "vuln-4",
@@ -61,6 +64,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 6.5,
     description: "Improper access control could allow authentication bypass for the iControl REST endpoint.",
     remediation: "Restrict management interface access to trusted networks and apply the vendor hotfix.",
+    matches: [],
   },
   {
     id: "vuln-5",
@@ -72,6 +76,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 10.0,
     description: "Log4Shell — unauthenticated remote code execution via JNDI lookups in log messages.",
     remediation: "Upgrade Log4j to 2.17.1+ or set log4j2.formatMsgNoLookups=true as an interim mitigation.",
+    matches: [],
   },
   {
     id: "vuln-6",
@@ -83,6 +88,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 5.9,
     description: "Ghostcat — the AJP connector allows reading of arbitrary files from the web application.",
     remediation: "Disable the AJP connector if unused, or bind it to localhost and require a shared secret.",
+    matches: [],
   },
   {
     id: "vuln-7",
@@ -94,6 +100,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 3.1,
     description: "Anonymous FTP login is enabled, exposing directory listings to unauthenticated users.",
     remediation: "Disable anonymous authentication or restrict the FTP service to internal maintenance windows.",
+    matches: [],
   },
   {
     id: "vuln-8",
@@ -105,6 +112,7 @@ const productionWebVulns: Vulnerability[] = [
     cvss: 0,
     description: "Server response headers disclose detailed version information useful for fingerprinting.",
     remediation: "Suppress or generalize the Server header at the reverse proxy layer.",
+    matches: [],
   },
 ];
 
@@ -119,6 +127,7 @@ const internalApiVulns: Vulnerability[] = [
     cvss: 9.8,
     description: "PKCS#11 feature in ssh-agent could allow remote code execution via a forwarded agent socket.",
     remediation: "Upgrade OpenSSH to 9.3p2 or later and disable agent forwarding where not required.",
+    matches: [],
   },
   {
     id: "vuln-10",
@@ -130,6 +139,7 @@ const internalApiVulns: Vulnerability[] = [
     cvss: 7.5,
     description: "X.509 punycode buffer overflow when verifying certificate name constraints.",
     remediation: "Upgrade OpenSSL to 3.0.7 or later on all affected hosts.",
+    matches: [],
   },
 ];
 

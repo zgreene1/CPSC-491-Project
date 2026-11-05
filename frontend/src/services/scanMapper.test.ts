@@ -141,4 +141,90 @@ describe("mapApiResultToScanRecord", () => {
     expect(record.vulnerabilities).toHaveLength(0);
     expect(record.totalFindings).toBe(0);
   });
+
+  it("attaches real catalog matches to the row for the matching host/port", () => {
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-4",
+      configuration: { targets: ["10.0.1.5"] },
+      state: "COMPLETED",
+      started_at: "2026-11-05T00:00:00",
+      completed_at: "2026-11-05T00:00:05",
+      ports: [
+        {
+          host_ip: "10.0.1.5",
+          host_mac: null,
+          port: 21,
+          protocol: "tcp",
+          state: "open",
+          service_hint: null,
+          service: "ftp",
+          product: "vsftpd",
+          version: "2.3.4",
+          banner: "220 vsftpd 2.3.4",
+          confidence: 0.95,
+          observed_at: "2026-11-05T00:00:03",
+        },
+        {
+          host_ip: "10.0.1.5",
+          host_mac: null,
+          port: 22,
+          protocol: "tcp",
+          state: "open",
+          service_hint: null,
+          service: "ssh",
+          product: "OpenSSH",
+          version: "9.6p1",
+          banner: "SSH-2.0-OpenSSH_9.6p1",
+          confidence: 0.99,
+          observed_at: "2026-11-05T00:00:03",
+        },
+      ],
+      progress: {
+        scan_id: "scan-4",
+        state: "COMPLETED",
+        hosts_discovered: 1,
+        hosts_completed: 1,
+        ports_completed: 2,
+        total_ports: 2,
+        percent_complete: 100,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 5,
+        cancellation_requested: false,
+      },
+      vulnerabilities: [
+        {
+          vulnerability_id: "CVE-2011-2523",
+          host_ip: "10.0.1.5",
+          port: 21,
+          protocol: "tcp",
+          software_id: "vsftpd",
+          observed_version: "2.3.4",
+          status: "potential",
+          summary: "vsftpd 2.3.4 backdoor command execution.",
+          source_url: "https://nvd.nist.gov/vuln/detail/CVE-2011-2523",
+          fingerprint_confidence: 0.95,
+        },
+      ],
+    });
+
+    const ftpRow = record.vulnerabilities.find((v) => v.port === 21)!;
+    const sshRow = record.vulnerabilities.find((v) => v.port === 22)!;
+
+    expect(ftpRow.matches).toEqual([
+      {
+        vulnerabilityId: "CVE-2011-2523",
+        status: "potential",
+        summary: "vsftpd 2.3.4 backdoor command execution.",
+        sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2011-2523",
+        confidence: 0.95,
+      },
+    ]);
+    expect(ftpRow.cve).toBe("CVE-2011-2523");
+    expect(ftpRow.severity).toBe("unclassified"); // still no severity/CVSS from the backend
+
+    // The port with no catalog match keeps the existing "not yet assessed" shape.
+    expect(sshRow.matches).toEqual([]);
+    expect(sshRow.cve).toBe("Not yet assessed");
+  });
 });
