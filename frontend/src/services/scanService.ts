@@ -159,3 +159,16 @@ export async function getScanProgress(scanId: string): Promise<ScanProgressState
 
   return mapApiProgress(await response.json());
 }
+
+export async function cancelScan(scanId: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/scans/${scanId}/cancel`, { method: "POST" });
+  } catch {
+    throw new ScanApiError("Lost connection to the scan service.", "connection");
+  }
+
+  if (!response.ok) {
+    throw new ScanApiError(await parseErrorMessage(response), "server");
+  }
+}
