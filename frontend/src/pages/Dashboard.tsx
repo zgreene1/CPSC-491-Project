@@ -10,19 +10,8 @@ import { SourcePill } from "../components/ui/SourcePill";
 import { StatusPill } from "../components/ui/StatusPill";
 import { PageContainer } from "../components/layout/PageContainer";
 import * as historyService from "../services/historyService";
-import type { ScanRecord, Severity } from "../types/scan";
-
-const severityOrder: Severity[] = ["critical", "high", "medium", "low"];
-
-function computeAggregateCounts(scans: ScanRecord[]): Record<Severity, number> {
-  return severityOrder.reduce<Record<Severity, number>>(
-    (acc, severity) => {
-      acc[severity] = scans.reduce((sum, scan) => sum + scan.severityCounts[severity], 0);
-      return acc;
-    },
-    { critical: 0, high: 0, medium: 0, low: 0, info: 0, unclassified: 0 },
-  );
-}
+import type { ScanRecord } from "../types/scan";
+import { computeAggregateCounts, computeOverallRisk } from "../utils/scanStats";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -82,7 +71,7 @@ export function Dashboard() {
 
   const totalFindings = scans.reduce((sum, scan) => sum + scan.totalFindings, 0);
   const aggregateCounts = computeAggregateCounts(scans);
-  const overallRisk = aggregateCounts.critical > 0 ? "High" : aggregateCounts.high > 0 ? "Elevated" : "Low";
+  const overallRisk = computeOverallRisk(aggregateCounts);
   const latestScan = scans[0];
   const recentScans = scans.slice(0, 5);
   const criticalAlerts = latestScan.vulnerabilities.filter(
