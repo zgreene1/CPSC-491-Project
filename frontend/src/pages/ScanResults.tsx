@@ -215,7 +215,9 @@ export function ScanResults() {
           />
         </Card>
 
-        {selected && <VulnerabilityDetailPanel vulnerability={selected} onClose={() => setSelected(null)} />}
+        {selected && (
+          <VulnerabilityDetailPanel scanId={scan.id} vulnerability={selected} onClose={() => setSelected(null)} />
+        )}
       </div>
     </PageContainer>
   );
