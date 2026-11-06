@@ -42,7 +42,7 @@ def scan_result_to_record(result: ScanResult) -> ScanRecord:
             mac=port.host_mac,
             port=port.port,
             protocol=port.protocol,
-            scan_state=port.state,
+            scan_state=port.scan_state,
             service_hint=port.service_hint,
             scanned_at=port.observed_at
         )
