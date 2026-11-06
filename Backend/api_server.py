@@ -7,6 +7,11 @@ scan, poll its progress, fetch its results, and list all known scans,
 speaking the shared JSON contracts documented in
 "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md".
 
+Also exposes /api/auth/login, /api/auth/logout, and /api/auth/me (see
+auth.py) — these are always real regardless of whether the scan endpoints
+themselves enforce authentication (see the REQUIRE_AUTH note on those
+endpoints once added).
+
 Run directly for local development:
 
     python api_server.py
@@ -29,6 +34,7 @@ from typing import Any, Dict, Optional, TypedDict
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+import auth
 from scanner_contracts import ScanConfiguration
 from scanner_coordinator import ScannerCoordinator
 
@@ -147,6 +153,41 @@ def get_results(scan_id: str):
         return jsonify({"status": "running"}), 202
 
     return jsonify(result.to_dict())
+
+
+@app.post("/api/auth/login")
+def login():
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("username", "")
+    password = payload.get("password", "")
+
+    if not isinstance(username, str) or not isinstance(password, str) or not username or not password:
+        return jsonify({"error": "Username and password are required."}), 400
+
+    if not auth.verify_credentials(username, password):
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    token, expires_at = auth.issue_token(username)
+    return jsonify({"token": token, "username": username, "expires_at": expires_at})
+
+
+@app.post("/api/auth/logout")
+def logout():
+    token = auth.extract_bearer_token(request.headers.get("Authorization"))
+    if token:
+        auth.invalidate_token(token)
+    return jsonify({"status": "logged_out"})
+
+
+@app.get("/api/auth/me")
+def get_current_user():
+    token = auth.extract_bearer_token(request.headers.get("Authorization"))
+    try:
+        username = auth.verify_token(token)
+    except auth.AuthError as exc:
+        return jsonify({"error": str(exc)}), 401
+
+    return jsonify({"username": username})
 
 
 def main() -> None:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import socketserver
 import threading
 import time
@@ -289,6 +290,89 @@ class ApiServerTests(unittest.TestCase):
         ]
 
         self.assertIn(port, open_ports)
+
+
+class AuthEndpointTests(unittest.TestCase):
+    """SOC 2 CC6.1 — the auth endpoints themselves are always real,
+    independent of whether REQUIRE_AUTH enforces them on scan endpoints."""
+
+    def setUp(self) -> None:
+        api_server.app.testing = True
+        self.client = api_server.app.test_client()
+        os.environ["AUTH_USERNAME"] = "analyst"
+        os.environ["AUTH_PASSWORD"] = "test-password-123"
+
+    def tearDown(self) -> None:
+        os.environ.pop("AUTH_USERNAME", None)
+        os.environ.pop("AUTH_PASSWORD", None)
+
+    def test_login_with_correct_credentials_succeeds(self) -> None:
+        response = self.client.post(
+            "/api/auth/login",
+            json={"username": "analyst", "password": "test-password-123"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["username"], "analyst")
+        self.assertTrue(body["token"])
+
+    def test_login_with_wrong_password_is_rejected(self) -> None:
+        response = self.client.post(
+            "/api/auth/login",
+            json={"username": "analyst", "password": "wrong"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_requires_both_fields(self) -> None:
+        response = self.client.post("/api/auth/login", json={"username": "analyst"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_me_accepts_a_token_from_a_real_login(self) -> None:
+        login_response = self.client.post(
+            "/api/auth/login",
+            json={"username": "analyst", "password": "test-password-123"},
+        )
+        token = login_response.get_json()["token"]
+
+        me_response = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.get_json()["username"], "analyst")
+
+    def test_me_rejects_a_missing_token(self) -> None:
+        response = self.client.get("/api/auth/me")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_me_rejects_a_tampered_token(self) -> None:
+        login_response = self.client.post(
+            "/api/auth/login",
+            json={"username": "analyst", "password": "test-password-123"},
+        )
+        token = login_response.get_json()["token"]
+        tampered = token[:-1] + ("x" if token[-1] != "x" else "y")
+
+        response = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {tampered}"})
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_logout_invalidates_the_token_for_future_requests(self) -> None:
+        login_response = self.client.post(
+            "/api/auth/login",
+            json={"username": "analyst", "password": "test-password-123"},
+        )
+        token = login_response.get_json()["token"]
+        auth_header = {"Authorization": f"Bearer {token}"}
+
+        self.assertEqual(self.client.get("/api/auth/me", headers=auth_header).status_code, 200)
+
+        logout_response = self.client.post("/api/auth/logout", headers=auth_header)
+        self.assertEqual(logout_response.status_code, 200)
+
+        self.assertEqual(self.client.get("/api/auth/me", headers=auth_header).status_code, 401)
 
 
 if __name__ == "__main__":
