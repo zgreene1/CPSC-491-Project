@@ -72,8 +72,16 @@ def test_scanner_result_maps_to_sqlite(tmp_path):
         completed_at="2026-10-29T17:00:03",
     )
 
+    # Verify that both observations exist in the scanner result.
+    assert len(result.ports) == 2
+    assert {port.port for port in result.ports} == {22, 443}
+
     # Convert the scanner result.
     record = scan_result_to_record(result)
+
+    # Verify that conversion preserved both observations.
+    assert len(record.ports) == 2
+    assert {port.port for port in record.ports} == {22, 443}
 
     # Persist through the actual repository.
     repository.save(record)
@@ -124,3 +132,6 @@ def test_scanner_result_maps_to_sqlite(tmp_path):
         ("127.0.0.1", 22, "tcp", "open", "ssh"),
         ("127.0.0.1", 443, "tcp", "closed", None),
     ]
+
+    # Verify that SQLite contains both observations.
+    assert len(port_rows) == 2
