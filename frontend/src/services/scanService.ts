@@ -1,8 +1,7 @@
 import type { ScanConfig } from "../types/scan";
+import { authFetch } from "./apiClient";
 import { mapApiProgress } from "./scanMapper";
 import type { ScanProgressState } from "../types/scan";
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
 const IPV4_OCTET = "(25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)";
 const IPV4_PATTERN = new RegExp(`^${IPV4_OCTET}(\\.${IPV4_OCTET}){3}$`);
@@ -122,7 +121,7 @@ export async function startScan(config: ScanConfig): Promise<{ scanId: string }>
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/scans`, {
+    response = await authFetch("/api/scans", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildScanRequestPayload(config)),
@@ -148,7 +147,7 @@ export async function startScan(config: ScanConfig): Promise<{ scanId: string }>
 export async function getScanProgress(scanId: string): Promise<ScanProgressState> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/scans/${scanId}/progress`);
+    response = await authFetch(`/api/scans/${scanId}/progress`);
   } catch {
     throw new ScanApiError("Lost connection to the scan service.", "connection");
   }
@@ -163,7 +162,7 @@ export async function getScanProgress(scanId: string): Promise<ScanProgressState
 export async function cancelScan(scanId: string): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/scans/${scanId}/cancel`, { method: "POST" });
+    response = await authFetch(`/api/scans/${scanId}/cancel`, { method: "POST" });
   } catch {
     throw new ScanApiError("Lost connection to the scan service.", "connection");
   }
