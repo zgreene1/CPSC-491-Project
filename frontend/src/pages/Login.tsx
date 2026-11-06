@@ -81,9 +81,6 @@ export function Login() {
           <Button type="submit" isLoading={isLoading} className="mt-2 w-full">
             Sign in
           </Button>
-          <p className="text-center text-xs text-ink-500">
-            Sprint 1 demo — any non-empty credentials will sign you in.
-          </p>
         </form>
       </div>
     </div>

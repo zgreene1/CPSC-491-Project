@@ -1,9 +1,8 @@
 import { mockScans } from "../mocks/scans";
 import type { ScanRecord } from "../types/scan";
+import { authFetch } from "./apiClient";
 import { ScanApiError } from "./scanService";
 import { mapApiResultToScanRecord } from "./scanMapper";
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
 /**
  * Sprint 1's seeded demo scans (Dashboard/History) still resolve from mock
@@ -19,7 +18,7 @@ export async function getScanResults(scanId: string): Promise<ScanRecord | undef
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/scans/${scanId}/results`);
+    response = await authFetch(`/api/scans/${scanId}/results`);
   } catch {
     throw new ScanApiError(
       "Could not reach the scan service. Confirm the backend is running.",
