@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../context/AuthContext";
 import { Dashboard } from "./Dashboard";
 import * as historyService from "../services/historyService";
+import * as remediationService from "../services/remediationService";
 import type { ScanRecord } from "../types/scan";
 
 function renderDashboard() {
@@ -81,6 +82,7 @@ function liveScan(overrides: Partial<ScanRecord> = {}): ScanRecord {
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.spyOn(historyService, "getScanHistory");
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -140,5 +142,63 @@ describe("Dashboard", () => {
     expect(await screen.findByText("Could not reach the scan service.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("10.0.1.0/24")).toBeInTheDocument();
+  });
+
+  it("surfaces a real potential match from the latest scan even when severity is unclassified", async () => {
+    const scanWithMatch = liveScan({
+      vulnerabilities: [
+        {
+          id: "vuln-live-1",
+          cve: "Not yet assessed",
+          severity: "unclassified",
+          host: "127.0.0.1",
+          port: 22,
+          service: "OpenSSH",
+          cvss: 0,
+          description: "Open port detected.",
+          remediation: "No automated remediation guidance available yet.",
+          matches: [
+            { vulnerabilityId: "CVE-2024-0001", status: "potential", summary: "OpenSSH match", sourceUrl: "https://example.com", confidence: 0.8 },
+          ],
+        },
+      ],
+    });
+    vi.mocked(historyService.getScanHistory).mockResolvedValue([scanWithMatch]);
+
+    renderDashboard();
+
+    const alertsCard = (await screen.findByText("Alerts")).closest("div")!.parentElement!;
+    expect(within(alertsCard).getByText("1 potential match")).toBeInTheDocument();
+  });
+
+  it("shows no alerts message when the latest scan has no critical/high findings or matches", async () => {
+    vi.mocked(historyService.getScanHistory).mockResolvedValue([liveScan()]);
+
+    renderDashboard();
+
+    expect(await screen.findByText("No alerts from the latest scan.")).toBeInTheDocument();
+  });
+
+  it("surfaces an open-remediation count for the latest scan's untouched findings", async () => {
+    vi.mocked(historyService.getScanHistory).mockResolvedValue([demoScan()]);
+
+    renderDashboard();
+
+    expect(await screen.findByText("1 open remediation")).toBeInTheDocument();
+  });
+
+  it("excludes a resolved finding from the open-remediation count", async () => {
+    const scan = demoScan();
+    vi.spyOn(remediationService, "getRemediation").mockReturnValue({
+      status: "resolved",
+      notes: "",
+      updatedAt: "2026-10-01T00:00:00Z",
+    });
+    vi.mocked(historyService.getScanHistory).mockResolvedValue([scan]);
+
+    renderDashboard();
+
+    await screen.findByText("Alerts");
+    expect(screen.queryByText(/open remediation/)).not.toBeInTheDocument();
   });
 });
