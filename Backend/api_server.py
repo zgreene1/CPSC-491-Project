@@ -3,8 +3,8 @@
 This module is intentionally a thin adapter: all real scanning logic stays in
 scanner_coordinator.py / scanner_contracts.py. Its only job is to expose that
 Python interface over HTTP so the frontend (running in a browser) can start a
-scan, poll its progress, fetch its results, and list all known scans,
-speaking the shared JSON contracts documented in
+scan, poll its progress, fetch its results, list all known scans, and cancel
+a scan in progress, speaking the shared JSON contracts documented in
 "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md".
 
 Also exposes /api/auth/login, /api/auth/logout, and /api/auth/me (see
@@ -195,6 +195,19 @@ def get_results(scan_id: str):
         return jsonify({"status": "running"}), 202
 
     return jsonify(result.to_dict())
+
+
+@app.post("/api/scans/<scan_id>/cancel")
+@require_auth
+def cancel_scan(scan_id: str):
+    entry = _get_entry(scan_id)
+    if entry is None:
+        return jsonify({"error": "Scan not found."}), 404
+
+    entry["coordinator"].cancel()
+
+    progress = entry["coordinator"].get_progress()
+    return jsonify(progress.to_dict() if progress else {"scan_id": scan_id, "cancellation_requested": True})
 
 
 @app.post("/api/auth/login")

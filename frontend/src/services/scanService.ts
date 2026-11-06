@@ -90,6 +90,11 @@ function buildScanRequestPayload(config: ScanConfig) {
     port_spec: config.scanType === "custom" ? config.portRange.trim() : null,
     timeout_seconds: timeoutByDepth[config.scanDepth],
     discovery_enabled: false,
+    // The backend's vulnerability catalog is empty today, so this currently
+    // always returns zero matches — but requesting it now means real matches
+    // show up automatically the moment the catalog has entries, with no
+    // frontend change needed.
+    match_vulnerabilities: true,
   };
 }
 
@@ -152,4 +157,17 @@ export async function getScanProgress(scanId: string): Promise<ScanProgressState
   }
 
   return mapApiProgress(await response.json());
+}
+
+export async function cancelScan(scanId: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await authFetch(`/api/scans/${scanId}/cancel`, { method: "POST" });
+  } catch {
+    throw new ScanApiError("Lost connection to the scan service.", "connection");
+  }
+
+  if (!response.ok) {
+    throw new ScanApiError(await parseErrorMessage(response), "server");
+  }
 }

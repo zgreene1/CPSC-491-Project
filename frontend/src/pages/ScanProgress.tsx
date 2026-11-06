@@ -21,12 +21,31 @@ function formatElapsed(seconds: number): string {
   return `${m}:${s}`;
 }
 
+const CANCELLABLE_STATUSES = new Set(["queued", "running"]);
+
 export function ScanProgress() {
   const { scanId } = useParams<{ scanId: string }>();
   const navigate = useNavigate();
   const [progress, setProgress] = useState<ScanProgressState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function handleCancel() {
+    if (!scanId) return;
+    setIsCancelling(true);
+    setCancelError(null);
+    try {
+      await scanService.cancelScan(scanId);
+    } catch (err) {
+      setCancelError(
+        err instanceof scanService.ScanApiError ? err.message : "Failed to cancel this scan.",
+      );
+    } finally {
+      setIsCancelling(false);
+    }
+  }
 
   useEffect(() => {
     if (!scanId) return;
@@ -80,6 +99,7 @@ export function ScanProgress() {
 
   const isComplete = progress.status === "completed";
   const isTerminal = TERMINAL_STATUSES.has(progress.status);
+  const isCancellable = CANCELLABLE_STATUSES.has(progress.status) && !progress.cancellationRequested;
 
   return (
     <PageContainer title="Scan Progress" description={`Monitoring scan ${scanId}`}>
@@ -127,10 +147,21 @@ export function ScanProgress() {
             <Button onClick={() => navigate(`/scans/${scanId}/results`)} disabled={!isComplete}>
               View Results
             </Button>
+            {isCancellable && (
+              <Button variant="danger" isLoading={isCancelling} onClick={handleCancel}>
+                Cancel Scan
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => navigate("/dashboard")}>
               Back to dashboard
             </Button>
           </div>
+
+          {cancelError && <ErrorMessage title="Could not cancel scan" message={cancelError} />}
+
+          {progress.cancellationRequested && !isTerminal && (
+            <p className="text-sm text-ink-400">Cancellation requested — waiting for the scan to stop…</p>
+          )}
 
           {isTerminal && !isComplete && (
             <p className="text-sm text-ink-400">

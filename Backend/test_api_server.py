@@ -267,6 +267,36 @@ class ApiServerTests(unittest.TestCase):
 
         self.assertIn(port, open_ports)
 
+    def test_cancel_scan_marks_cancellation_requested(self) -> None:
+        start_response = self.client.post(
+            "/api/scans",
+            json={
+                "targets": ["127.0.0.1"],
+                "scan_mode": "custom",
+                "ports": [65000],
+                "discovery_enabled": False,
+                "timeout_seconds": 2.0,
+            },
+        )
+
+        self.assertEqual(start_response.status_code, 202)
+        scan_id = start_response.get_json()["scan_id"]
+
+        cancel_response = self.client.post(f"/api/scans/{scan_id}/cancel")
+
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertTrue(cancel_response.get_json()["cancellation_requested"])
+
+        progress_response = self.client.get(f"/api/scans/{scan_id}/progress")
+
+        self.assertEqual(progress_response.status_code, 200)
+        self.assertTrue(progress_response.get_json()["cancellation_requested"])
+
+    def test_cancel_unknown_scan_returns_not_found(self) -> None:
+        response = self.client.post("/api/scans/does-not-exist/cancel")
+
+        self.assertEqual(response.status_code, 404)
+
     def test_list_scans_includes_a_completed_scan_with_its_findings(self) -> None:
         port = self._start_local_listener()
 
