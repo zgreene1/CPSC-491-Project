@@ -70,6 +70,7 @@ describe("getScanResults", () => {
     expect(result?.isDemo).toBe(false);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/scans/scan-real-123/results"),
+      expect.any(Object),
     );
   });
 
