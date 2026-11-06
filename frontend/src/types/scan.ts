@@ -58,6 +58,20 @@ export interface ScanRecord extends ScanSummary {
   vulnerabilities: Vulnerability[];
 }
 
+export type RemediationStatus = "open" | "in-progress" | "resolved" | "accepted-risk";
+
+/**
+ * The backend has no concept of remediation tracking at all (confirmed:
+ * no status/notes fields in any backend data model). This is a frontend-only
+ * layer on top of read-only scan data, persisted in localStorage — see
+ * services/remediationService.ts.
+ */
+export interface RemediationRecord {
+  status: RemediationStatus;
+  notes: string;
+  updatedAt: string;
+}
+
 export interface ScanProgressState {
   scanId: string;
   status: ScanStatus;
