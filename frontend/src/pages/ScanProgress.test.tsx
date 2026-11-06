@@ -123,6 +123,26 @@ describe("ScanProgress", () => {
     expect(cancelSpy).toHaveBeenCalledWith("scan-abc");
   });
 
+  it("shows a Cancel Scan button while queued, before the scan starts running", async () => {
+    vi.mocked(scanService.getScanProgress).mockResolvedValue({
+      scanId: "scan-abc",
+      status: "queued",
+      percentComplete: 0,
+      hostsDiscovered: 0,
+      hostsCompleted: 0,
+      portsCompleted: 0,
+      totalPorts: 0,
+      currentHost: null,
+      currentPort: null,
+      elapsedSeconds: 0,
+      cancellationRequested: false,
+    });
+
+    renderScanProgress();
+
+    expect(await screen.findByRole("button", { name: "Cancel Scan" })).toBeInTheDocument();
+  });
+
   it("hides the Cancel Scan button once the scan is terminal", async () => {
     vi.mocked(scanService.getScanProgress).mockResolvedValue({
       scanId: "scan-abc",
