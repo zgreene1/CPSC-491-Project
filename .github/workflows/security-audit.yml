@@ -1,3 +1,6 @@
+
+name: SOC 2 CC7.1 Security Audit
+
 on:
   push:
     branches: [main]
@@ -35,7 +38,7 @@ jobs:
         id: npm_audit
         continue-on-error: true
         run: |
-          npm audit --json > frontend-audit.json
+          npm audit --json > "$RUNNER_TEMP/frontend-audit.json" || true
           npm audit --audit-level=high
 
       - name: Upload frontend audit report
@@ -43,8 +46,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-security-report
-          path: frontend/frontend-audit.json
-          if-no-files-found: warn
+          path: ${{ runner.temp }}/frontend-audit.json
+          if-no-files-found: error
           retention-days: 30
 
       - name: Enforce frontend security gate
@@ -78,14 +81,14 @@ jobs:
           python -m pip_audit \
             -r Backend/requirements.txt \
             -f json \
-            -o backend-audit.json
+            -o "$RUNNER_TEMP/backend-audit.json"
 
       - name: Upload backend audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-security-report
-          path: backend-audit.json
+          path: ${{ runner.temp }}/backend-audit.json
           if-no-files-found: warn
           retention-days: 30
 
