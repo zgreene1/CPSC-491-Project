@@ -36,7 +36,7 @@ def scan_result_to_record(result: ScanResult) -> ScanRecord:
         ):
             raise ValueError(
                 "Enriched service fields are not supported by the current persistence schema."
-        )
+            )
 
         port_record = ScanPortRecord(
             ip=port.host_ip,
@@ -50,16 +50,16 @@ def scan_result_to_record(result: ScanResult) -> ScanRecord:
 
         port_records.append(port_record)
 
-        return ScanRecord(
-            scan_id=result.scan_id,
-            target=result.configuration.targets[0],
-            started_at=result.started_at,
-            completed_at=result.completed_at,
-            scan_status=result.state.value.lower(),
-            host_count=len(result.hosts),
-            open_port_count=sum(
-                port.state.lower() == "open"
-                for port in result.ports
-            ),
-            ports=tuple(port_records)
-        )
+    return ScanRecord(
+        scan_id=result.scan_id,
+        target=result.configuration.targets[0],
+        started_at=result.started_at,
+        completed_at=result.completed_at,
+        scan_status=result.state.value.lower(),
+        host_count=len(result.hosts),
+        open_port_count=sum(
+            port.state.lower() == "open"
+            for port in result.ports
+        ),
+        ports=tuple(port_records),
+    )
