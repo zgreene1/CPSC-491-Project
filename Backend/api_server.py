@@ -1,3 +1,4 @@
+
 """Minimal HTTP API wrapping ScannerCoordinator for frontend integration.
 
 This module is intentionally a thin adapter: all real scanning logic stays in
@@ -39,6 +40,7 @@ from flask_cors import CORS
 import auth
 from scanner_contracts import ScanConfiguration
 from scanner_coordinator import ScannerCoordinator
+from target_validation import validate_target
 
 app = Flask(__name__)
 
@@ -143,15 +145,62 @@ def start_scan():
     config = _build_configuration(payload)
     config.scan_id = config.scan_id or f"scan-{uuid.uuid4()}"
 
+    # Validate the scan configuration before starting a scan.
     validation_errors = config.validation_errors()
     if validation_errors:
-        return jsonify({"errors": [error.to_dict() for error in validation_errors]}), 400
+        return jsonify({
+            "errors": [error.to_dict() for error in validation_errors]
+        }), 400
+
+    # ==========================================================
+    # Sprint 5 - Adreana Navarro
+    # Target Validation Regression Fix
+    # November 12, 2026
+    # ==========================================================
+    # Validate non-CIDR targets before creating the scan.
+    # This reuses the existing IPv4 and hostname validation logic.
+    for target in config.targets:
+        if not isinstance(target, str):
+            return jsonify({
+                "errors": [{
+                    "code": "INVALID_TARGET",
+                    "message": "Scan target must be a string.",
+                    "stage": "configuration",
+                    "details": {},
+                    "recoverable": False,
+                }]
+            }), 400
+
+        # CIDR targets are supported separately by the scanner normalizer.
+        # CIDR validation requires a separate integration check.
+        if "/" in target:
+            continue
+
+        result = validate_target(target)
+
+        if not result.valid:
+            return jsonify({
+                "errors": [{
+                    "code": "INVALID_TARGET",
+                    "message": result.error or "Invalid scan target.",
+                    "stage": "configuration",
+                    "details": {"target": target},
+                    "recoverable": False,
+                }]
+            }), 400
 
     coordinator = ScannerCoordinator()
     with _scans_lock:
-        _scans[config.scan_id] = {"coordinator": coordinator, "config": config}
+        _scans[config.scan_id] = {
+            "coordinator": coordinator,
+            "config": config,
+        }
 
-    thread = threading.Thread(target=coordinator.run, args=(config,), daemon=True)
+    thread = threading.Thread(
+        target=coordinator.run,
+        args=(config,),
+        daemon=True,
+    )
     thread.start()
 
     return jsonify({"scan_id": config.scan_id}), 202
@@ -207,7 +256,11 @@ def cancel_scan(scan_id: str):
     entry["coordinator"].cancel()
 
     progress = entry["coordinator"].get_progress()
-    return jsonify(progress.to_dict() if progress else {"scan_id": scan_id, "cancellation_requested": True})
+    return jsonify(
+        progress.to_dict()
+        if progress
+        else {"scan_id": scan_id, "cancellation_requested": True}
+    )
 
 
 @app.post("/api/auth/login")

@@ -1,4 +1,5 @@
 
+
 """Tests for the thin HTTP API wrapping ScannerCoordinator (api_server.py)."""
 
 from __future__ import annotations
@@ -162,6 +163,34 @@ class ApiServerTests(unittest.TestCase):
             list_response.get_json(),
             {"scans": []},
         )
+
+    # ==========================================================
+    # Sprint 5 - Adreana Navarro
+    # Target Validation Regression Testing
+    # November 12, 2026
+    # ==========================================================
+
+    def test_start_scan_rejects_invalid_ipv4_target(self) -> None:
+        """Verify malformed IPv4 targets are rejected before a scan starts."""
+        response = self.client.post(
+            "/api/scans",
+            json={
+                "targets": ["999.999.999.999"],
+                "scan_mode": "custom",
+                "port_spec": "80",
+                "discovery_enabled": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+        body = response.get_json()
+        self.assertTrue(body["errors"])
+
+        scans_response = self.client.get("/api/scans")
+
+        self.assertEqual(scans_response.status_code, 200)
+        self.assertEqual(scans_response.get_json(), {"scans": []})
 
     # ==========================================================
     # Existing API Integration Tests
