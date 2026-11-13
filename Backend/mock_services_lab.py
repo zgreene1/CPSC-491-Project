@@ -14,6 +14,11 @@ Examples:
 Then scan the explicit test ports, for example:
     python scanner_Service_Fingerprint.py --ports 18022,18080,18081,18082,18083,18121,18122,18123,18225,18226
 
+For CVE matching (opt-in, harmless synthetic vulnerable/patched banners):
+    python mock_services_lab.py --ports 18084,18085,18086,18087
+    # Then scan 127.0.0.1 with custom ports 18084-18087 and enable
+    # match_vulnerabilities in the API request.
+
 Only expose these mock listeners on networks you are authorized to test.
 """
 
@@ -154,6 +159,50 @@ class MicrosoftSMTPHandler(QuietHandler):
             )
 
 
+# Optional banner-only fixtures for demonstrating CVE version-range matching.
+# They ARE NOT vulnerable servers: no vulnerable Apache/nginx code is running.
+# They are excluded from the default mock lab to preserve existing TEST-02
+# fixture counts and avoid altering established regression expectations.
+class ApacheCVE2021HTTPHandler(QuietHandler):
+    def handle(self) -> None:
+        self.recv_some()
+        self.send(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Server: Apache/2.4.49\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
+class ApachePatchedHTTPHandler(QuietHandler):
+    def handle(self) -> None:
+        self.recv_some()
+        self.send(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Server: Apache/2.4.51\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
+class NginxCVE2021HTTPHandler(QuietHandler):
+    def handle(self) -> None:
+        self.recv_some()
+        self.send(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Server: nginx/1.20.0\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
+class NginxPatchedHTTPHandler(QuietHandler):
+    def handle(self) -> None:
+        self.recv_some()
+        self.send(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Server: nginx/1.20.1\r\n"
+            b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
 HANDLERS: Dict[str, Type[QuietHandler]] = {
     "ssh": SSHHandler,
     "apache": ApacheHTTPHandler,
@@ -182,6 +231,22 @@ SERVICES: Tuple[MockService, ...] = (
 )
 
 
+# Only started when selected by --ports; do not include in default SERVICES.
+CVE_TEST_SERVICES: Tuple[MockService, ...] = (
+    MockService(18084, "http", "Apache httpd", "2.4.49", "apache_cve"),
+    MockService(18085, "http", "Apache httpd", "2.4.51", "apache_patched"),
+    MockService(18086, "http", "nginx", "1.20.0", "nginx_cve"),
+    MockService(18087, "http", "nginx", "1.20.1", "nginx_patched"),
+)
+
+CVE_TEST_HANDLERS: Dict[str, Type[QuietHandler]] = {
+    "apache_cve": ApacheCVE2021HTTPHandler,
+    "apache_patched": ApachePatchedHTTPHandler,
+    "nginx_cve": NginxCVE2021HTTPHandler,
+    "nginx_patched": NginxPatchedHTTPHandler,
+}
+
+
 def parse_ports(value: str | None) -> set[int] | None:
     if value is None:
         return None
@@ -204,11 +269,13 @@ def parse_ports(value: str | None) -> set[int] | None:
 def start_services(host: str, selected_ports: set[int] | None) -> List[ThreadingTCPServer]:
     servers: List[ThreadingTCPServer] = []
 
-    for service in SERVICES:
+    # Additional CVE fixtures are opt-in and never start in default mode.
+    available = SERVICES + (CVE_TEST_SERVICES if selected_ports is not None else ())
+    for service in available:
         if selected_ports is not None and service.port not in selected_ports:
             continue
 
-        handler = HANDLERS[service.handler_name]
+        handler = HANDLERS.get(service.handler_name) or CVE_TEST_HANDLERS[service.handler_name]
         try:
             server = ThreadingTCPServer((host, service.port), handler)
         except OSError as exc:
@@ -230,7 +297,7 @@ def print_table(host: str, servers: List[ThreadingTCPServer]) -> None:
     print()
     print(f"{'PORT':<8} {'SERVICE':<10} {'PRODUCT':<22} {'VERSION'}")
     print("-" * 60)
-    for service in SERVICES:
+    for service in SERVICES + CVE_TEST_SERVICES:
         if service.port in running_ports:
             print(
                 f"{service.port:<8} "
@@ -244,6 +311,8 @@ def print_table(host: str, servers: List[ThreadingTCPServer]) -> None:
     print("Scanner test command:")
     print(f"  python scanner_Service_Fingerprint.py --ports {port_list}")
     print()
+    if running_ports.intersection({18084, 18085, 18086, 18087}):
+        print("CVE fixtures are banner simulations, NOT genuinely vulnerable servers.")
     print("Press Ctrl+C to stop all mock services.")
 
 
@@ -261,7 +330,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--ports",
-        help="Optional comma-separated subset of mock ports to start.",
+        help="Optional comma-separated subset, including CVE demo fixtures 18084-18087.",
     )
     args = parser.parse_args()
 

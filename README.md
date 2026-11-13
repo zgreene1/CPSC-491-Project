@@ -64,13 +64,14 @@ The scanner is intentionally split into focused modules so discovery, scanning, 
 * Scanner adapters that preserve existing low-level modules
 * Sprint 2 integration tests
 * Cross-platform compatibility testing
+* Curated offline CVE version-range matching for three reviewed Apache/nginx records (potential findings only)
 * Linux support
 * Windows support
 * macOS support
 
 ### In Development / Planned
 
-* Vulnerability matching
+* Broad CVE/NVD vulnerability matching (a three-record curated offline matching MVP is implemented)
 * CVE/NVD integration
 * CPE normalization
 * CVSS severity scoring
@@ -214,7 +215,7 @@ CANCELLED
 
 `IDENTIFYING` is active when service fingerprinting is performed by the coordinator.
 
-`MATCHING` is reserved for the future vulnerability/CVE matching stage and should not be treated as active until that work is implemented.
+`MATCHING` is active when `match_vulnerabilities=True` and the coordinator compares identified services with the small curated offline catalog. Results are potential matches, not confirmed vulnerabilities.
 
 ### `ScanProgress`
 
@@ -536,7 +537,7 @@ flowchart LR
 
 A scan may move directly from `CREATED` to `SCANNING` when discovery is disabled and manual targets are provided.
 
-Future CVE matching will introduce the active `MATCHING` stage between identification and completion.
+Opt-in curated CVE matching uses the `MATCHING` stage between identification and completion. Other scan modes can skip this stage.
 
 ---
 
@@ -915,11 +916,13 @@ Containerized deployment requires special consideration for network discovery be
 
 ---
 
-# Planned Vulnerability Matching
+# Curated Vulnerability Matching (Sprint 5 MVP)
 
-Service fingerprinting now produces the information needed for the next major scanner stage.
+The scanner has an opt-in, offline vulnerability matching step backed by `Backend/vulnerability_catalog.json`. Its three CVE records were verified against Apache/nginx advisories and NVD on November 12, 2026. The catalog is intentionally limited, not a live NVD feed. Only high-confidence, supported TCP fingerprints with numeric versions produce *potential* matches.
 
-Future vulnerability matching is expected to consume:
+See [Sprint 5 CVE matching verification](docs/Sprint5_CVE_Matching_Validation.md) for evidence, reproducible tests, and harmless vulnerable/patched banner fixtures.
+
+Expanded future vulnerability analysis will consume:
 
 * Service name
 * Product
@@ -1039,7 +1042,7 @@ Backend Service / API         [Planned]
 Persistence                   [Planned]
         |
         v
-Vulnerability / CVE Matching  [Planned]
+Curated CVE Matching         [Implemented: limited MVP]
         |
         v
 CVSS / Severity               [Planned]

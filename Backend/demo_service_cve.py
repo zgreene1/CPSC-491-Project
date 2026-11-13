@@ -1,28 +1,41 @@
-"""Offline, read-only CVE matching demonstration (no network scanning)."""
+"""Offline demonstration of curated CVE matching (no network scanning).
+
+Run from Backend on Linux, Windows, or macOS:
+    python demo_service_cve.py
+
+The observations below are synthetic service fingerprints and findings are
+POTENTIAL version-range matches, not proof of a vulnerable installation.
+"""
 from __future__ import annotations
 
-from pathlib import Path
 from scanner_contracts import PortObservation
 from service_vulnerability_matcher import load_catalog, match_observations
 
-EXAMPLE_CATALOG = Path(__file__).resolve().parent.parent / "examples" / "example_curated_catalog.json"
+
+SCENARIOS = (
+    ("Apache httpd", "2.4.48"),
+    ("Apache httpd", "2.4.49"),
+    ("Apache httpd", "2.4.50"),
+    ("Apache httpd", "2.4.51"),
+    ("nginx", "1.20.0"),
+    ("nginx", "1.20.1"),
+)
 
 
 def main() -> None:
-    records = load_catalog(EXAMPLE_CATALOG)
-    examples = [
-        PortObservation(
+    records = load_catalog()
+    print(f"Offline CVE demo: {len(records)} vetted catalog records (not a full NVD feed).")
+    for product, version in SCENARIOS:
+        observation = PortObservation(
             host_ip="127.0.0.1", port=8080, protocol="tcp", state="open",
-            service="http", product="Apache httpd", version=version,
+            service="http", product=product, version=version,
             confidence=0.98, fingerprint_method="http_headers",
         )
-        for version in ("2.4.48", "2.4.49", "2.4.50")
-    ]
-    for observation in examples:
-        matches = match_observations([observation], records)
-        label = ", ".join(item.vulnerability_id + " (POTENTIAL)" for item in matches) or "no catalog match"
-        print(f"Apache HTTP Server {observation.version}: {label}")
-    print("Lab observations only. No real host was scanned or confirmed vulnerable.")
+        findings = match_observations((observation,), records)
+        labels = ", ".join(item.vulnerability_id for item in findings) or "no catalog match"
+        print(f"{product:12} {version:8} -> {labels}")
+    print("NOTE: Version-only matches are POTENTIAL. No real host was scanned.")
+    print("No catalog match does not prove the service is secure.")
 
 
 if __name__ == "__main__":

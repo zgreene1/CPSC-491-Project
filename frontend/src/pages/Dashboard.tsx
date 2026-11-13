@@ -10,18 +10,19 @@ import { SourcePill } from "../components/ui/SourcePill";
 import { StatusPill } from "../components/ui/StatusPill";
 import { PageContainer } from "../components/layout/PageContainer";
 import * as historyService from "../services/historyService";
-import type { ScanRecord, Severity } from "../types/scan";
+import * as remediationService from "../services/remediationService";
+import type { ScanRecord } from "../types/scan";
+import { computeAggregateCounts, computeOverallRisk } from "../utils/scanStats";
 
-const severityOrder: Severity[] = ["critical", "high", "medium", "low"];
-
-function computeAggregateCounts(scans: ScanRecord[]): Record<Severity, number> {
-  return severityOrder.reduce<Record<Severity, number>>(
-    (acc, severity) => {
-      acc[severity] = scans.reduce((sum, scan) => sum + scan.severityCounts[severity], 0);
-      return acc;
-    },
-    { critical: 0, high: 0, medium: 0, low: 0, info: 0, unclassified: 0 },
-  );
+/** Open/in-progress remediation items for a scan's own findings — a stored
+ * record defaults to "open" when nothing's been saved yet (see
+ * remediationService.getRemediation), so an untouched finding still counts. */
+function countOpenRemediations(scan: ScanRecord): number {
+  return scan.vulnerabilities.filter((vuln) => {
+    const key = remediationService.buildRemediationKey(scan.id, vuln.host, vuln.port, vuln.cve);
+    const record = remediationService.getRemediation(key);
+    return record.status === "open" || record.status === "in-progress";
+  }).length;
 }
 
 export function Dashboard() {
@@ -82,12 +83,15 @@ export function Dashboard() {
 
   const totalFindings = scans.reduce((sum, scan) => sum + scan.totalFindings, 0);
   const aggregateCounts = computeAggregateCounts(scans);
-  const overallRisk = aggregateCounts.critical > 0 ? "High" : aggregateCounts.high > 0 ? "Elevated" : "Low";
+  const overallRisk = computeOverallRisk(aggregateCounts);
   const latestScan = scans[0];
   const recentScans = scans.slice(0, 5);
-  const criticalAlerts = latestScan.vulnerabilities.filter(
-    (v) => v.severity === "critical" || v.severity === "high",
+  // Severity-independent: a real scan's findings are "unclassified" until the
+  // catalog is populated, but a real catalog match is still worth surfacing.
+  const alerts = latestScan.vulnerabilities.filter(
+    (v) => v.severity === "critical" || v.severity === "high" || v.matches.length > 0,
   );
+  const openRemediationCount = countOpenRemediations(latestScan);
 
   return (
     <PageContainer title="Dashboard" description="Overview of your scanning activity and current risk posture.">
@@ -160,13 +164,18 @@ export function Dashboard() {
           <span className="flex items-center gap-2 text-xs text-ink-500">
             From latest scan · {latestScan.target}
             <SourcePill isDemo={latestScan.isDemo} />
+            {openRemediationCount > 0 && (
+              <span className="rounded-full bg-ink-750 px-2 py-0.5 font-medium text-ink-300">
+                {openRemediationCount} open remediation{openRemediationCount === 1 ? "" : "s"}
+              </span>
+            )}
           </span>
         </CardHeader>
         <CardBody className="space-y-2">
-          {criticalAlerts.length === 0 ? (
-            <p className="py-4 text-center text-sm text-ink-400">No critical or high severity alerts.</p>
+          {alerts.length === 0 ? (
+            <p className="py-4 text-center text-sm text-ink-400">No alerts from the latest scan.</p>
           ) : (
-            criticalAlerts.map((vuln) => (
+            alerts.map((vuln) => (
               <div
                 key={vuln.id}
                 className="flex items-center justify-between gap-4 rounded-lg border border-ink-650 bg-ink-800/60 px-4 py-3"
@@ -175,6 +184,11 @@ export function Dashboard() {
                   <SeverityBadge severity={vuln.severity} />
                   <span className="font-mono text-sm text-ink-100">{vuln.cve}</span>
                   <span className="text-sm text-ink-400">{vuln.service}</span>
+                  {vuln.matches.length > 0 && (
+                    <span className="rounded-full bg-signal-500/10 px-2 py-0.5 text-xs font-medium text-signal-400 ring-1 ring-inset ring-signal-500/30">
+                      {vuln.matches.length} potential match{vuln.matches.length === 1 ? "" : "es"}
+                    </span>
+                  )}
                 </div>
                 <span className="font-mono text-xs text-ink-500">
                   {vuln.host}:{vuln.port}

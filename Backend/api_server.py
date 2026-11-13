@@ -3,9 +3,15 @@
 This module is intentionally a thin adapter: all real scanning logic stays in
 scanner_coordinator.py / scanner_contracts.py. Its only job is to expose that
 Python interface over HTTP so the frontend (running in a browser) can start a
-scan, poll its progress, fetch its results, and list all known scans,
-speaking the shared JSON contracts documented in
+scan, poll its progress, fetch its results, list all known scans, and cancel
+a scan in progress, speaking the shared JSON contracts documented in
 "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md".
+
+Also exposes /api/auth/login, /api/auth/logout, and /api/auth/me (see
+auth.py) — these are always real. Whether the scan endpoints themselves
+*require* a valid token is controlled by the REQUIRE_AUTH environment
+variable (default off, see require_auth below), so existing unauthenticated
+workflows keep working until the team opts in.
 
 Run directly for local development:
 
@@ -21,6 +27,7 @@ persistence layer yet.
 
 from __future__ import annotations
 
+import functools
 import os
 import threading
 import uuid
@@ -29,11 +36,48 @@ from typing import Any, Dict, Optional, TypedDict
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+import auth
 from scanner_contracts import ScanConfiguration
 from scanner_coordinator import ScannerCoordinator
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS only affects browser-based cross-origin calls (not curl, pytest, or
+# any other non-browser client), so restricting it to known frontend origins
+# carries no regression risk for existing API testing/tooling.
+_DEFAULT_FRONTEND_ORIGINS = "http://localhost:5173,https://dashing-truffle-eb234e.netlify.app"
+_frontend_origins = [
+    origin.strip()
+    for origin in os.environ.get("FRONTEND_ORIGIN", _DEFAULT_FRONTEND_ORIGINS).split(",")
+    if origin.strip()
+]
+CORS(app, origins=_frontend_origins)
+
+
+def _require_auth_enabled() -> bool:
+    return os.environ.get("REQUIRE_AUTH", "false").strip().lower() in ("1", "true", "yes")
+
+
+def require_auth(view):
+    """No-op unless REQUIRE_AUTH is truthy, so existing unauthenticated
+    workflows are unaffected until the team opts in. Checked per-request
+    (not once at import time) so it can be toggled in tests and without a
+    server restart in local development."""
+
+    @functools.wraps(view)
+    def wrapper(*args: Any, **kwargs: Any):
+        if not _require_auth_enabled():
+            return view(*args, **kwargs)
+
+        token = auth.extract_bearer_token(request.headers.get("Authorization"))
+        try:
+            auth.verify_token(token)
+        except auth.AuthError as exc:
+            return jsonify({"error": str(exc)}), 401
+
+        return view(*args, **kwargs)
+
+    return wrapper
 
 
 class ScanEntry(TypedDict):
@@ -93,6 +137,7 @@ def _serialize_entry(scan_id: str, entry: ScanEntry) -> Dict[str, Any]:
 
 
 @app.post("/api/scans")
+@require_auth
 def start_scan():
     payload = request.get_json(silent=True) or {}
     config = _build_configuration(payload)
@@ -113,6 +158,7 @@ def start_scan():
 
 
 @app.get("/api/scans")
+@require_auth
 def list_scans():
     with _scans_lock:
         entries = list(_scans.items())
@@ -124,6 +170,7 @@ def list_scans():
 
 
 @app.get("/api/scans/<scan_id>/progress")
+@require_auth
 def get_progress(scan_id: str):
     entry = _get_entry(scan_id)
     if entry is None:
@@ -137,6 +184,7 @@ def get_progress(scan_id: str):
 
 
 @app.get("/api/scans/<scan_id>/results")
+@require_auth
 def get_results(scan_id: str):
     entry = _get_entry(scan_id)
     if entry is None:
@@ -147,6 +195,54 @@ def get_results(scan_id: str):
         return jsonify({"status": "running"}), 202
 
     return jsonify(result.to_dict())
+
+
+@app.post("/api/scans/<scan_id>/cancel")
+@require_auth
+def cancel_scan(scan_id: str):
+    entry = _get_entry(scan_id)
+    if entry is None:
+        return jsonify({"error": "Scan not found."}), 404
+
+    entry["coordinator"].cancel()
+
+    progress = entry["coordinator"].get_progress()
+    return jsonify(progress.to_dict() if progress else {"scan_id": scan_id, "cancellation_requested": True})
+
+
+@app.post("/api/auth/login")
+def login():
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("username", "")
+    password = payload.get("password", "")
+
+    if not isinstance(username, str) or not isinstance(password, str) or not username or not password:
+        return jsonify({"error": "Username and password are required."}), 400
+
+    if not auth.verify_credentials(username, password):
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    token, expires_at = auth.issue_token(username)
+    return jsonify({"token": token, "username": username, "expires_at": expires_at})
+
+
+@app.post("/api/auth/logout")
+def logout():
+    token = auth.extract_bearer_token(request.headers.get("Authorization"))
+    if token:
+        auth.invalidate_token(token)
+    return jsonify({"status": "logged_out"})
+
+
+@app.get("/api/auth/me")
+def get_current_user():
+    token = auth.extract_bearer_token(request.headers.get("Authorization"))
+    try:
+        username = auth.verify_token(token)
+    except auth.AuthError as exc:
+        return jsonify({"error": str(exc)}), 401
+
+    return jsonify({"username": username})
 
 
 def main() -> None:

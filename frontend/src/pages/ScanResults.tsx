@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { PageContainer } from "../components/layout/PageContainer";
-import { Card, CardBody } from "../components/ui/Card";
+import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
 import { SeverityBadge } from "../components/ui/SeverityBadge";
 import { Table, type Column, type SortDirection } from "../components/ui/Table";
+import { VulnerabilityDetailPanel } from "../components/ui/VulnerabilityDetailPanel";
 import * as resultsService from "../services/resultsService";
 import type { ScanRecord, Severity, Vulnerability } from "../types/scan";
 
@@ -215,45 +216,7 @@ export function ScanResults() {
         </Card>
 
         {selected && (
-          <Card elevation="floating">
-            <CardBody className="space-y-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-mono text-sm text-ink-400">{selected.cve}</p>
-                  <SeverityBadge severity={selected.severity} />
-                </div>
-                <button
-                  onClick={() => setSelected(null)}
-                  className="rounded-md p-1 text-ink-400 transition-colors hover:bg-ink-750 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400"
-                  aria-label="Close detail panel"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">CVSS Score</p>
-                <p className="font-mono text-2xl font-semibold text-ink-50">{selected.cvss.toFixed(1)}</p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Affected Service</p>
-                <p className="mt-1 text-sm text-ink-200">
-                  {selected.host}:{selected.port} · {selected.service}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Description</p>
-                <p className="mt-1 text-sm text-ink-300">{selected.description}</p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Recommended Remediation</p>
-                <p className="mt-1 text-sm text-ink-300">{selected.remediation}</p>
-              </div>
-            </CardBody>
-          </Card>
+          <VulnerabilityDetailPanel scanId={scan.id} vulnerability={selected} onClose={() => setSelected(null)} />
         )}
       </div>
     </PageContainer>
