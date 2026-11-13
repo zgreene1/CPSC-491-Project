@@ -90,10 +90,8 @@ function buildScanRequestPayload(config: ScanConfig) {
     port_spec: config.scanType === "custom" ? config.portRange.trim() : null,
     timeout_seconds: timeoutByDepth[config.scanDepth],
     discovery_enabled: false,
-    // The backend's vulnerability catalog is empty today, so this currently
-    // always returns zero matches — but requesting it now means real matches
-    // show up automatically the moment the catalog has entries, with no
-    // frontend change needed.
+    // Enable the coordinator's limited, curated offline CVE matching.
+    // Results remain potential version-range matches, not confirmed exploits.
     match_vulnerabilities: true,
   };
 }

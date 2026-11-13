@@ -4,12 +4,11 @@ import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Vulnera
  * Maps the shared backend contracts (see
  * "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md") onto the
  * frontend's domain types. The backend's vulnerability matcher is real and
- * wired in (see Backend/service_vulnerability_matcher.py), but it has no
- * concept of severity or CVSS, and its catalog is currently empty — so every
- * real port observation keeps surfacing severity as "unclassified" rather
- * than inventing a level the backend hasn't actually determined. Real
- * catalog matches (once the catalog has entries) show up via the `matches`
- * field on each Vulnerability row.
+ * wired in (see Backend/service_vulnerability_matcher.py), with a small
+ * curated offline catalog (not a full CVE feed). The backend does not expose
+ * severity or CVSS, so the frontend keeps every port observation's severity
+ * "unclassified" rather than inventing a rating. Version-range matches
+ * appear in the `matches` field as POTENTIAL findings.
  */
 
 interface ApiPortObservation {
@@ -126,7 +125,7 @@ function describeMatches(matches: PotentialMatch[]): string {
 function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatch[]): Vulnerability {
   const baseDescription = port.banner
     ? `Open port detected. Observed banner: ${port.banner}`
-    : "Open port detected. Vulnerability matching is not implemented yet.";
+    : "Open port detected. CVE matching uses a limited curated catalog.";
 
   return {
     id: `${port.host_ip}-${port.port}`,
@@ -139,7 +138,7 @@ function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatc
     description: `${baseDescription}${describeMatches(matches)}`,
     remediation: matches.length > 0
       ? "A potential version-range match was found against the vulnerability catalog — this is not a confirmed exploit. Review the source reference below and verify before acting."
-      : "No automated remediation guidance available yet — the vulnerability catalog has no entries for this service/version.",
+      : "No confirmed vulnerability assessment or automated remediation guidance is available for this observation.",
     matches,
   };
 }
