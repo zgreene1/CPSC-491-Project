@@ -74,6 +74,35 @@ describe("NewScan", () => {
     );
   });
 
+  it("does not submit twice when Start Scan is clicked repeatedly before the response arrives", async () => {
+    let resolveFetch: (value: Response) => void;
+    vi.mocked(globalThis.fetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderNewScan();
+
+    await user.type(screen.getByLabelText("Target IP / Hostname"), "10.0.1.12");
+    const submitButton = screen.getByRole("button", { name: "Start Scan" });
+
+    await user.click(submitButton);
+    expect(submitButton).toBeDisabled();
+    await user.click(submitButton); // second click while the first request is still pending
+    await user.click(submitButton);
+
+    resolveFetch!({
+      ok: true,
+      status: 202,
+      json: async () => ({ scan_id: "scan-abc123" }),
+    } as Response);
+
+    expect(await screen.findByText("Progress page")).toBeInTheDocument();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a connection error when the backend is unreachable", async () => {
     vi.mocked(globalThis.fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
 

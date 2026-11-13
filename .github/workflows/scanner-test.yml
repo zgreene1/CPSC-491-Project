@@ -1,8 +1,10 @@
+
 name: Scanner Compatibility Tests
 
 on:
   push:
   pull_request:
+    branches: [main]
 
 jobs:
   scanner-tests:
@@ -56,6 +58,12 @@ jobs:
       - name: Verify pytest installation
         run: python -m pytest --version
 
-      # pytest collects both pytest functions and unittest.TestCase tests.
+      # Sprint 4 - SOC 2 CC8.1 Change Management
+      # Run API validation tests separately to provide
+      # identifiable security testing evidence in CI.
+      - name: Run API security validation tests
+        run: python -m pytest -v test_api_server.py
+
+      # Run the complete scanner regression suite.
       - name: Run all scanner tests
         run: python -m pytest -q

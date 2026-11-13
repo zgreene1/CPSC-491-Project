@@ -1,4 +1,5 @@
 
+
 import unittest
 
 from target_validation import validate_target
@@ -69,7 +70,7 @@ class TargetValidationTests(unittest.TestCase):
 
         self.assertFalse(result.valid)
 
-    # SCRUM-71: Additional boundary and negative tests
+    # SCRUM-71: Additional hostname boundary and negative tests
 
     def test_hostname_63_character_label_is_accepted(self):
         hostname = "a" * 63 + ".example.com"
@@ -105,6 +106,22 @@ class TargetValidationTests(unittest.TestCase):
 
         self.assertFalse(result.valid)
         self.assertEqual(result.error, "Target cannot be empty.")
+
+    # Sprint 3: Additional IPv4 boundary-value tests
+
+    def test_ipv4_lowest_boundary_is_accepted(self):
+        result = validate_target("0.0.0.0")
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "ipv4")
+        self.assertEqual(result.normalized_target, "0.0.0.0")
+
+    def test_ipv4_highest_boundary_is_accepted(self):
+        result = validate_target("255.255.255.255")
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.target_type, "ipv4")
+        self.assertEqual(result.normalized_target, "255.255.255.255")
 
 
 if __name__ == "__main__":

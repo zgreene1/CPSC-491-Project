@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { PageContainer } from "../components/layout/PageContainer";
-import { Card, CardBody } from "../components/ui/Card";
+import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
 import { SeverityBadge } from "../components/ui/SeverityBadge";
 import { Table, type Column, type SortDirection } from "../components/ui/Table";
+import { VulnerabilityDetailPanel } from "../components/ui/VulnerabilityDetailPanel";
 import * as resultsService from "../services/resultsService";
 import type { ScanRecord, Severity, Vulnerability } from "../types/scan";
 
@@ -34,6 +35,7 @@ export function ScanResults() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<string>("severity");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selected, setSelected] = useState<Vulnerability | null>(null);
@@ -69,10 +71,20 @@ export function ScanResults() {
 
   const filteredSorted = useMemo(() => {
     if (!scan) return [];
-    const filtered =
+    const bySeverity =
       severityFilter === "all"
         ? scan.vulnerabilities
         : scan.vulnerabilities.filter((v) => v.severity === severityFilter);
+
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = query
+      ? bySeverity.filter(
+          (v) =>
+            v.cve.toLowerCase().includes(query) ||
+            v.host.toLowerCase().includes(query) ||
+            v.service.toLowerCase().includes(query),
+        )
+      : bySeverity;
 
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;
@@ -95,7 +107,7 @@ export function ScanResults() {
       return sortDirection === "asc" ? comparison : -comparison;
     });
     return sorted;
-  }, [scan, severityFilter, sortKey, sortDirection]);
+  }, [scan, severityFilter, searchQuery, sortKey, sortDirection]);
 
   function handleSort(key: string) {
     if (key === sortKey) {
@@ -138,20 +150,44 @@ export function ScanResults() {
       title="Scan Results"
       description={`${scan.target} · started ${new Date(scan.startedAt).toLocaleString()}`}
     >
-      <div className="flex flex-wrap gap-2">
-        {severityFilters.map((sev) => (
-          <button
-            key={sev}
-            onClick={() => setSeverityFilter(sev)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 ${
-              severityFilter === sev
-                ? "bg-signal-500/15 text-signal-300 ring-1 ring-inset ring-signal-500/30"
-                : "bg-ink-800 text-ink-300 hover:bg-ink-750 hover:text-ink-100"
-            }`}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap gap-2">
+          {severityFilters.map((sev) => (
+            <button
+              key={sev}
+              onClick={() => setSeverityFilter(sev)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 ${
+                severityFilter === sev
+                  ? "bg-signal-500/15 text-signal-300 ring-1 ring-inset ring-signal-500/30"
+                  : "bg-ink-800 text-ink-300 hover:bg-ink-750 hover:text-ink-100"
+              }`}
+            >
+              {sev}
+            </button>
+          ))}
+        </div>
+
+        <label className="relative ml-auto">
+          <span className="sr-only">Search by CVE, host, or service</span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-500"
+            aria-hidden="true"
           >
-            {sev}
-          </button>
-        ))}
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+            <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search CVE, host, or service"
+            className="h-9 w-64 rounded-lg border border-ink-600 bg-ink-850 pl-9 pr-3 text-sm text-ink-100 placeholder:text-ink-400 transition-[box-shadow,border-color] duration-150 hover:border-ink-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
+          />
+        </label>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -168,9 +204,11 @@ export function ScanResults() {
               <EmptyState
                 title="No known vulnerabilities were detected"
                 description={
-                  severityFilter === "all"
-                    ? "Scan completed with no findings matching the current view."
-                    : `No ${severityFilter} severity findings for this scan.`
+                  searchQuery.trim()
+                    ? `No findings match "${searchQuery.trim()}".`
+                    : severityFilter === "all"
+                      ? "Scan completed with no findings matching the current view."
+                      : `No ${severityFilter} severity findings for this scan.`
                 }
               />
             }
@@ -178,45 +216,7 @@ export function ScanResults() {
         </Card>
 
         {selected && (
-          <Card elevation="floating">
-            <CardBody className="space-y-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-mono text-sm text-ink-400">{selected.cve}</p>
-                  <SeverityBadge severity={selected.severity} />
-                </div>
-                <button
-                  onClick={() => setSelected(null)}
-                  className="rounded-md p-1 text-ink-400 transition-colors hover:bg-ink-750 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400"
-                  aria-label="Close detail panel"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">CVSS Score</p>
-                <p className="font-mono text-2xl font-semibold text-ink-50">{selected.cvss.toFixed(1)}</p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Affected Service</p>
-                <p className="mt-1 text-sm text-ink-200">
-                  {selected.host}:{selected.port} · {selected.service}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Description</p>
-                <p className="mt-1 text-sm text-ink-300">{selected.description}</p>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink-500">Recommended Remediation</p>
-                <p className="mt-1 text-sm text-ink-300">{selected.remediation}</p>
-              </div>
-            </CardBody>
-          </Card>
+          <VulnerabilityDetailPanel scanId={scan.id} vulnerability={selected} onClose={() => setSelected(null)} />
         )}
       </div>
     </PageContainer>

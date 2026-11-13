@@ -5,6 +5,7 @@ import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
+import { SourcePill } from "../components/ui/SourcePill";
 import { StatusPill } from "../components/ui/StatusPill";
 import { Table, type Column } from "../components/ui/Table";
 import * as historyService from "../services/historyService";
@@ -49,6 +50,7 @@ export function ScanHistory() {
     { key: "target", header: "Target", render: (s) => <span className="font-mono text-sm">{s.target}</span> },
     { key: "status", header: "Status", render: (s) => <StatusPill status={s.status} /> },
     { key: "totalFindings", header: "Findings", align: "right", render: (s) => s.totalFindings },
+    { key: "source", header: "Source", render: (s) => <SourcePill isDemo={s.isDemo} /> },
   ];
 
   return (

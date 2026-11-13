@@ -13,6 +13,21 @@ export interface ScanConfig {
   scanDepth: ScanDepth;
 }
 
+/**
+ * A real match from the backend's vulnerability catalog against an observed
+ * service/version. "Potential" because it's a version-range match, not a
+ * confirmed exploit — the backend never claims otherwise (see
+ * Backend/service_vulnerability_matcher.py). No severity/CVSS here: the
+ * backend doesn't produce that data yet.
+ */
+export interface PotentialMatch {
+  vulnerabilityId: string;
+  status: string;
+  summary: string;
+  sourceUrl: string;
+  confidence: number | null;
+}
+
 export interface Vulnerability {
   id: string;
   cve: string;
@@ -23,6 +38,8 @@ export interface Vulnerability {
   cvss: number;
   description: string;
   remediation: string;
+  /** Real catalog matches for this host/port, if any. Empty for demo data. */
+  matches: PotentialMatch[];
 }
 
 export interface ScanSummary {
@@ -32,11 +49,27 @@ export interface ScanSummary {
   status: ScanStatus;
   totalFindings: number;
   severityCounts: Record<Severity, number>;
+  /** True for the seeded Sprint 1 example scans; false for real backend scans. */
+  isDemo: boolean;
 }
 
 export interface ScanRecord extends ScanSummary {
   config: ScanConfig;
   vulnerabilities: Vulnerability[];
+}
+
+export type RemediationStatus = "open" | "in-progress" | "resolved" | "accepted-risk";
+
+/**
+ * The backend has no concept of remediation tracking at all (confirmed:
+ * no status/notes fields in any backend data model). This is a frontend-only
+ * layer on top of read-only scan data, persisted in localStorage — see
+ * services/remediationService.ts.
+ */
+export interface RemediationRecord {
+  status: RemediationStatus;
+  notes: string;
+  updatedAt: string;
 }
 
 export interface ScanProgressState {
