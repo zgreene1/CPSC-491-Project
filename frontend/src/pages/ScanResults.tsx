@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { PageContainer } from "../components/layout/PageContainer";
-import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
@@ -9,6 +10,7 @@ import { SeverityBadge } from "../components/ui/SeverityBadge";
 import { Table, type Column, type SortDirection } from "../components/ui/Table";
 import { VulnerabilityDetailPanel } from "../components/ui/VulnerabilityDetailPanel";
 import * as resultsService from "../services/resultsService";
+import { ScanApiError } from "../services/scanService";
 import type { ScanRecord, Severity, Vulnerability } from "../types/scan";
 
 const severityRank: Record<Severity, number> = {
@@ -31,9 +33,11 @@ const severityFilters: Array<Severity | "all"> = [
 
 export function ScanResults() {
   const { scanId } = useParams<{ scanId: string }>();
+  const navigate = useNavigate();
   const [scan, setScan] = useState<ScanRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInProgress, setIsInProgress] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<string>("severity");
@@ -45,6 +49,7 @@ export function ScanResults() {
     if (!scanId) return;
     setIsLoading(true);
     setError(null);
+    setIsInProgress(false);
     resultsService
       .getScanResults(scanId)
       .then((result) => {
@@ -57,6 +62,10 @@ export function ScanResults() {
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err instanceof ScanApiError && err.kind === "in_progress") {
+          setIsInProgress(true);
+          return;
+        }
         setError(
           err instanceof Error ? err.message : "Failed to load scan results. The backend may be unavailable.",
         );
@@ -122,6 +131,26 @@ export function ScanResults() {
     return (
       <PageContainer title="Scan Results">
         <LoadingOverlay label="Loading scan results…" />
+      </PageContainer>
+    );
+  }
+
+  if (isInProgress) {
+    return (
+      <PageContainer title="Scan Results">
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="This scan is still running"
+              description="Results will be available here once the scan completes."
+              action={
+                <Button size="sm" onClick={() => navigate(`/scans/${scanId}/progress`)}>
+                  View scan progress
+                </Button>
+              }
+            />
+          </CardBody>
+        </Card>
       </PageContainer>
     );
   }

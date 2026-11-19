@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../context/AuthContext";
 import { ScanResults } from "./ScanResults";
 import * as resultsService from "../services/resultsService";
+import { ScanApiError } from "../services/scanService";
 import type { ScanRecord } from "../types/scan";
 
 function renderScanResults(scanId = "scan-1") {
@@ -13,6 +14,7 @@ function renderScanResults(scanId = "scan-1") {
       <AuthProvider>
         <Routes>
           <Route path="/scans/:scanId/results" element={<ScanResults />} />
+          <Route path="/scans/:scanId/progress" element={<div>Progress page</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -255,5 +257,20 @@ describe("ScanResults", () => {
     renderScanResults("scan-does-not-exist");
 
     expect(await screen.findByText("This scan could not be found.")).toBeInTheDocument();
+  });
+
+  it("shows a friendly still-running state instead of an error when the scan hasn't finished", async () => {
+    vi.mocked(resultsService.getScanResults).mockRejectedValue(
+      new ScanApiError("This scan hasn't finished yet.", "in_progress"),
+    );
+    const user = userEvent.setup();
+
+    renderScanResults("scan-still-running");
+
+    expect(await screen.findByText("This scan is still running")).toBeInTheDocument();
+    expect(screen.queryByText("This scan hasn't finished yet.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "View scan progress" }));
+    expect(await screen.findByText("Progress page")).toBeInTheDocument();
   });
 });

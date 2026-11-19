@@ -30,7 +30,7 @@ export async function getScanResults(scanId: string): Promise<ScanRecord | undef
     return undefined;
   }
   if (response.status === 202) {
-    throw new ScanApiError("This scan hasn't finished yet.", "server");
+    throw new ScanApiError("This scan hasn't finished yet.", "in_progress");
   }
   if (!response.ok) {
     throw new ScanApiError("Failed to load scan results.", "server");
