@@ -6,6 +6,7 @@ import { Card, CardBody } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
+import { Pagination } from "../components/ui/Pagination";
 import { SeverityBadge } from "../components/ui/SeverityBadge";
 import { Table, type Column, type SortDirection } from "../components/ui/Table";
 import { VulnerabilityDetailPanel } from "../components/ui/VulnerabilityDetailPanel";
@@ -30,6 +31,7 @@ const severityFilters: Array<Severity | "all"> = [
   "info",
   "unclassified",
 ];
+const PAGE_SIZE = 25;
 
 export function ScanResults() {
   const { scanId } = useParams<{ scanId: string }>();
@@ -43,6 +45,7 @@ export function ScanResults() {
   const [sortKey, setSortKey] = useState<string>("severity");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selected, setSelected] = useState<Vulnerability | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +120,18 @@ export function ScanResults() {
     });
     return sorted;
   }, [scan, severityFilter, searchQuery, sortKey, sortDirection]);
+
+  // A filter/search/sort change can leave `page` pointing past the end of
+  // the new, smaller result set — reset to the first page whenever the
+  // underlying filtered list changes instead of showing an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [severityFilter, searchQuery, sortKey, sortDirection, scan?.id]);
+
+  const pagedRows = useMemo(
+    () => filteredSorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredSorted, page],
+  );
 
   function handleSort(key: string) {
     if (key === sortKey) {
@@ -250,7 +265,7 @@ export function ScanResults() {
         <Card className={selected ? "lg:col-span-2" : "lg:col-span-3"}>
           <Table
             columns={columns}
-            rows={filteredSorted}
+            rows={pagedRows}
             rowKey={(row) => row.id}
             sortKey={sortKey}
             sortDirection={sortDirection}
@@ -269,6 +284,15 @@ export function ScanResults() {
               />
             }
           />
+          {filteredSorted.length > PAGE_SIZE && (
+            <Pagination
+              page={page}
+              pageSize={PAGE_SIZE}
+              totalItems={filteredSorted.length}
+              onPageChange={setPage}
+              itemLabel="findings"
+            />
+          )}
         </Card>
 
         {selected && (

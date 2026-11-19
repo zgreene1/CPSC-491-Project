@@ -59,6 +59,25 @@ const twoFindingScan: ScanRecord = {
   warnings: [],
 };
 
+function manyFindingScan(count: number): ScanRecord {
+  return {
+    ...twoFindingScan,
+    id: "scan-large",
+    vulnerabilities: Array.from({ length: count }, (_, i) => ({
+      id: `vuln-${i}`,
+      cve: `CVE-0000-${String(i).padStart(4, "0")}`,
+      severity: "unclassified",
+      host: "10.0.0.1",
+      port: 1024 + i,
+      service: "unknown",
+      cvss: 0,
+      description: "Open port detected.",
+      remediation: "No automated remediation guidance available yet.",
+      matches: [],
+    })),
+  };
+}
+
 describe("ScanResults", () => {
   beforeEach(() => {
     vi.spyOn(resultsService, "getScanResults");
@@ -272,5 +291,52 @@ describe("ScanResults", () => {
 
     await user.click(screen.getByRole("button", { name: "View scan progress" }));
     expect(await screen.findByText("Progress page")).toBeInTheDocument();
+  });
+
+  it("does not show pagination for a small result set", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(twoFindingScan);
+
+    renderScanResults();
+
+    await screen.findByText("CVE-2021-44228");
+    expect(screen.queryByText(/Showing \d+/)).not.toBeInTheDocument();
+  });
+
+  it("paginates a large result set instead of rendering every row at once", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+
+    renderScanResults();
+
+    expect(await screen.findByText("Showing 1–25 of 60 findings")).toBeInTheDocument();
+    expect(screen.getByText("CVE-0000-0000")).toBeInTheDocument();
+    expect(screen.queryByText("CVE-0000-0025")).not.toBeInTheDocument();
+  });
+
+  it("navigates to the next page and shows the next slice of findings", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-0000-0000");
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(await screen.findByText("Showing 26–50 of 60 findings")).toBeInTheDocument();
+    expect(screen.queryByText("CVE-0000-0000")).not.toBeInTheDocument();
+    expect(screen.getByText("CVE-0000-0025")).toBeInTheDocument();
+  });
+
+  it("resets to page 1 when the severity filter changes", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-0000-0000");
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByText("Showing 26–50 of 60 findings");
+
+    await user.click(screen.getByRole("button", { name: "unclassified" }));
+
+    expect(await screen.findByText("Showing 1–25 of 60 findings")).toBeInTheDocument();
   });
 });
