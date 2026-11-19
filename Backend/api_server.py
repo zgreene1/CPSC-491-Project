@@ -21,17 +21,19 @@ Run directly for local development:
 The server listens on http://127.0.0.1:8000 by default (override with the
 PORT environment variable).
 
-Scan state lives only in this process's memory — restarting the server
-clears all scan history. That's an accepted limitation for now; there's no
-persistence layer yet.
+Completed scan results are stored in SQLite. Set SCAN_DATABASE_PATH to choose
+the database file; by default it is Backend/scan_history.sqlite3. Active scan
+progress remains in memory and is not resumable after a server restart.
 """
 
 from __future__ import annotations
 
 import functools
+import logging
 import os
 import threading
 import uuid
+from pathlib import Path
 from typing import Any, Dict, Optional, TypedDict
 
 from flask import Flask, jsonify, request
@@ -42,7 +44,21 @@ from scanner_contracts import ScanConfiguration
 from scanner_coordinator import ScannerCoordinator
 from target_validation import validate_target
 
+try:
+    from .scan_record_database import Database
+    from .scan_record_repository import ScanRepository
+except ImportError:  # Running api_server.py directly from Backend/
+    from scan_record_database import Database
+    from scan_record_repository import ScanRepository
+
 app = Flask(__name__)
+_database_path = os.environ.get(
+    "SCAN_DATABASE_PATH", str(Path(__file__).with_name("scan_history.sqlite3"))
+)
+_database = Database(_database_path)
+_database.initialize()
+_scan_repository = ScanRepository(_database)
+_logger = logging.getLogger(__name__)
 
 # CORS only affects browser-based cross-origin calls (not curl, pytest, or
 # any other non-browser client), so restricting it to known frontend origins
@@ -138,6 +154,22 @@ def _serialize_entry(scan_id: str, entry: ScanEntry) -> Dict[str, Any]:
     }
 
 
+def _run_and_persist_scan(
+    scan_id: str,
+    coordinator: ScannerCoordinator,
+    config: ScanConfiguration,
+    repository: ScanRepository,
+) -> None:
+    """Run a scan and save its final contract payload for restart recovery."""
+    result = coordinator.run(config)
+    try:
+        repository.save_result_payload(result.to_dict())
+    except Exception:
+        # Keep the live result available even if disk persistence fails; log
+        # enough context for the operator to diagnose the storage problem.
+        _logger.exception("Could not persist scan %s", scan_id)
+
+
 @app.post("/api/scans")
 @require_auth
 def start_scan():
@@ -189,16 +221,21 @@ def start_scan():
                 }]
             }), 400
 
+    if _get_entry(config.scan_id) is not None or _scan_repository.get_result_payload(config.scan_id):
+        return jsonify({"error": "A scan with this scan_id already exists."}), 409
+
     coordinator = ScannerCoordinator()
     with _scans_lock:
+        if config.scan_id in _scans:
+            return jsonify({"error": "A scan with this scan_id already exists."}), 409
         _scans[config.scan_id] = {
             "coordinator": coordinator,
             "config": config,
         }
 
     thread = threading.Thread(
-        target=coordinator.run,
-        args=(config,),
+        target=_run_and_persist_scan,
+        args=(config.scan_id, coordinator, config, _scan_repository),
         daemon=True,
     )
     thread.start()
@@ -212,7 +249,9 @@ def list_scans():
     with _scans_lock:
         entries = list(_scans.items())
 
-    scans = [_serialize_entry(scan_id, entry) for scan_id, entry in entries]
+    scans_by_id = {scan.get("scan_id"): scan for scan in _scan_repository.list_result_payloads()}
+    scans_by_id.update({scan_id: _serialize_entry(scan_id, entry) for scan_id, entry in entries})
+    scans = list(scans_by_id.values())
     scans.sort(key=lambda scan: scan.get("started_at") or "", reverse=True)
 
     return jsonify({"scans": scans})
@@ -237,7 +276,10 @@ def get_progress(scan_id: str):
 def get_results(scan_id: str):
     entry = _get_entry(scan_id)
     if entry is None:
-        return jsonify({"error": "Scan not found."}), 404
+        result = _scan_repository.get_result_payload(scan_id)
+        if result is None:
+            return jsonify({"error": "Scan not found."}), 404
+        return jsonify(result)
 
     result = entry["coordinator"].get_result()
     if result is None:
