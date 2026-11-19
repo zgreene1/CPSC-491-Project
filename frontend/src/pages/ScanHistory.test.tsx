@@ -31,6 +31,7 @@ function scan(overrides: Partial<ScanRecord> = {}): ScanRecord {
     isDemo: false,
     config: { target: "10.0.1.12", portRange: "", scanType: "custom", scanDepth: "standard" },
     vulnerabilities: [],
+    warnings: [],
     ...overrides,
   };
 }

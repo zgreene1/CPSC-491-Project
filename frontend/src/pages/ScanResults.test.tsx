@@ -54,6 +54,7 @@ const twoFindingScan: ScanRecord = {
       matches: [],
     },
   ],
+  warnings: [],
 };
 
 describe("ScanResults", () => {
@@ -72,6 +73,37 @@ describe("ScanResults", () => {
 
     expect(await screen.findByText("CVE-2021-44228")).toBeInTheDocument();
     expect(screen.getByText("N/A")).toBeInTheDocument();
+  });
+
+  it("does not show a warning banner when the scan has no warnings", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(twoFindingScan);
+
+    renderScanResults();
+
+    await screen.findByText("CVE-2021-44228");
+    expect(screen.queryByText("Scan completed with a warning")).not.toBeInTheDocument();
+  });
+
+  it("shows a non-fatal warning banner when the backend reports a recoverable scan error", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue({
+      ...twoFindingScan,
+      warnings: [
+        {
+          code: "VULNERABILITY_CATALOG_ERROR",
+          message: "Vulnerability matching was unavailable; port results were preserved.",
+          stage: "matching",
+        },
+      ],
+    });
+
+    renderScanResults();
+
+    expect(await screen.findByText("Scan completed with a warning")).toBeInTheDocument();
+    expect(
+      screen.getByText("Vulnerability matching was unavailable; port results were preserved."),
+    ).toBeInTheDocument();
+    // The underlying port/finding data is still shown — a warning doesn't hide results.
+    expect(screen.getByText("CVE-2021-44228")).toBeInTheDocument();
   });
 
   it("filters by severity", async () => {

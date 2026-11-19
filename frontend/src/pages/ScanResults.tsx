@@ -150,6 +150,33 @@ export function ScanResults() {
       title="Scan Results"
       description={`${scan.target} · started ${new Date(scan.startedAt).toLocaleString()}`}
     >
+      {scan.warnings.length > 0 && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-severity-medium/30 bg-severity-medium/10 px-4 py-3.5"
+        >
+          <span className="mt-0.5 text-severity-medium" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path
+                d="M10 2 1 18h18L10 2Zm0 5v5m0 3h.01"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-ink-100">Scan completed with a warning</p>
+            {scan.warnings.map((warning) => (
+              <p key={warning.code} className="text-sm text-ink-300">
+                {warning.message}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-2">
           {severityFilters.map((sev) => (
