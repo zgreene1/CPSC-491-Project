@@ -6,7 +6,7 @@ import { TextField } from "../components/ui/FormField";
 import { useAuth } from "../context/AuthContext";
 
 export function Login() {
-  const { login, isAuthenticated, isLoading, error } = useAuth();
+  const { login, isAuthenticated, isLoading, error, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
@@ -52,6 +52,26 @@ export function Login() {
             <p className="mt-1 text-sm text-ink-400">Sign in to your vulnerability scanner</p>
           </div>
         </div>
+
+        {sessionNotice && (
+          <div
+            role="status"
+            className="mb-4 flex items-start gap-3 rounded-xl border border-severity-medium/30 bg-severity-medium/10 px-4 py-3.5"
+          >
+            <span className="mt-0.5 text-severity-medium" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M10 2 1 18h18L10 2Zm0 5v5m0 3h.01"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <p className="text-sm text-ink-200">{sessionNotice}</p>
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}

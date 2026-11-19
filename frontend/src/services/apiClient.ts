@@ -18,7 +18,7 @@ export async function authFetch(path: string, init: RequestInit = {}): Promise<R
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   if (response.status === 401) {
-    invalidateSession();
+    invalidateSession("Your session has expired. Please sign in again.");
   }
 
   return response;

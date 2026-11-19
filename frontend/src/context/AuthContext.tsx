@@ -9,6 +9,10 @@ interface AuthContextValue {
   isInitializing: boolean;
   isLoading: boolean;
   error: string | null;
+  /** Set when the session was invalidated unexpectedly (expired, tampered,
+   * a 401 mid-use) rather than by the user clicking "sign out" — shown on
+   * the login page so a redirect never happens without explanation. */
+  sessionNotice: string | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -22,11 +26,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
 
-  function clearSession() {
+  function clearSession(reason?: string) {
     setUser(null);
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken(null);
+    setSessionNotice(reason ?? null);
   }
 
   // A stored token is never trusted on its own — it's verified against
@@ -42,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authService
       .getCurrentUser(storedToken)
       .then((verifiedUser) => setUser(verifiedUser))
-      .catch(() => clearSession())
+      .catch(() => clearSession("Your session is no longer valid. Please sign in again."))
       .finally(() => setIsInitializing(false));
   }, []);
 
@@ -57,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isInitializing,
       isLoading,
       error,
+      sessionNotice,
       async login(username: string, password: string) {
         setIsLoading(true);
         setError(null);
@@ -64,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const result = await authService.login(username, password);
           setUser(result.user);
           sessionStorage.setItem(TOKEN_STORAGE_KEY, result.token);
+          setSessionNotice(null);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Unable to sign in.");
           throw err;
@@ -74,11 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout() {
         // authService.logout() is already best-effort (never rejects); it
         // clears the token itself, this just clears the rest of the session.
+        // No reason passed — an explicit sign-out needs no explanation.
         void authService.logout();
         clearSession();
       },
     }),
-    [user, isInitializing, isLoading, error],
+    [user, isInitializing, isLoading, error, sessionNotice],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
