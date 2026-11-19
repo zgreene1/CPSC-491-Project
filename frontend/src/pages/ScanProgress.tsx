@@ -28,9 +28,11 @@ export function ScanProgress() {
   const navigate = useNavigate();
   const [progress, setProgress] = useState<ScanProgressState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connectionLost, setConnectionLost] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasConnectedRef = useRef(false);
 
   async function handleCancel() {
     if (!scanId) return;
@@ -51,24 +53,34 @@ export function ScanProgress() {
     if (!scanId) return;
 
     let cancelled = false;
+    hasConnectedRef.current = false;
 
     async function poll() {
       try {
         const next = await scanService.getScanProgress(scanId!);
         if (cancelled) return;
+        hasConnectedRef.current = true;
         setProgress(next);
         setError(null);
+        setConnectionLost(false);
         if (TERMINAL_STATUSES.has(next.status) && pollRef.current) {
           clearInterval(pollRef.current);
         }
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof scanService.ScanApiError
-            ? err.message
-            : "Failed to load scan progress.",
-        );
-        if (pollRef.current) clearInterval(pollRef.current);
+        const message =
+          err instanceof scanService.ScanApiError ? err.message : "Failed to load scan progress.";
+
+        if (hasConnectedRef.current) {
+          // We were already watching this scan successfully — a single
+          // failed poll is a dropped connection, not a fatal error. Keep
+          // showing the last-known progress and keep retrying instead of
+          // wiping the screen and permanently stopping the poll loop.
+          setConnectionLost(true);
+        } else {
+          setError(message);
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
       }
     }
 
@@ -103,6 +115,18 @@ export function ScanProgress() {
 
   return (
     <PageContainer title="Scan Progress" description={`Monitoring scan ${scanId}`}>
+      {connectionLost && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-xl border border-severity-medium/30 bg-severity-medium/10 px-4 py-3.5 max-w-2xl"
+        >
+          <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-severity-medium" aria-hidden="true" />
+          <p className="text-sm text-ink-200">
+            Connection lost — retrying… the progress below is from the last successful update.
+          </p>
+        </div>
+      )}
+
       <Card className="max-w-2xl">
         <CardBody className="space-y-6">
           <div className="flex items-center justify-between">
