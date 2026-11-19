@@ -46,6 +46,7 @@ export function ScanResults() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selected, setSelected] = useState<Vulnerability | null>(null);
   const [page, setPage] = useState(1);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +80,7 @@ export function ScanResults() {
     return () => {
       cancelled = true;
     };
-  }, [scanId]);
+  }, [scanId, retryKey]);
 
   const filteredSorted = useMemo(() => {
     if (!scan) return [];
@@ -173,7 +174,7 @@ export function ScanResults() {
   if (error) {
     return (
       <PageContainer title="Scan Results">
-        <ErrorMessage message={error} />
+        <ErrorMessage message={error} onRetry={() => setRetryKey((key) => key + 1)} />
       </PageContainer>
     );
   }

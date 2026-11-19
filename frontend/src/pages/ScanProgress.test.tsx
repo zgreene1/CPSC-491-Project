@@ -205,6 +205,35 @@ describe("ScanProgress", () => {
     expect(screen.getByText("Lost connection to the scan service.")).toBeInTheDocument();
   });
 
+  it("offers a Retry button on a fatal error instead of a dead end", async () => {
+    vi.mocked(scanService.getScanProgress)
+      .mockRejectedValueOnce(
+        new scanService.ScanApiError("Lost connection to the scan service.", "connection"),
+      )
+      .mockResolvedValue({
+        scanId: "scan-abc",
+        status: "running",
+        percentComplete: 10,
+        hostsDiscovered: 1,
+        hostsCompleted: 0,
+        portsCompleted: 0,
+        totalPorts: 5,
+        currentHost: null,
+        currentPort: null,
+        elapsedSeconds: 0,
+        cancellationRequested: false,
+      });
+    const user = userEvent.setup();
+
+    renderScanProgress();
+
+    await screen.findByText("Backend unavailable");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("10%")).toBeInTheDocument();
+    expect(screen.queryByText("Backend unavailable")).not.toBeInTheDocument();
+  });
+
   it("keeps showing last-known progress and warns instead of erroring when a poll fails after one already succeeded", async () => {
     vi.mocked(scanService.getScanProgress)
       .mockResolvedValueOnce({

@@ -278,6 +278,20 @@ describe("ScanResults", () => {
     expect(await screen.findByText("This scan could not be found.")).toBeInTheDocument();
   });
 
+  it("offers a Retry button on error instead of a dead end", async () => {
+    vi.mocked(resultsService.getScanResults)
+      .mockRejectedValueOnce(new Error("Failed to load scan results."))
+      .mockResolvedValue(twoFindingScan);
+    const user = userEvent.setup();
+
+    renderScanResults();
+
+    await screen.findByText("Failed to load scan results.");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("CVE-2021-44228")).toBeInTheDocument();
+  });
+
   it("shows a friendly still-running state instead of an error when the scan hasn't finished", async () => {
     vi.mocked(resultsService.getScanResults).mockRejectedValue(
       new ScanApiError("This scan hasn't finished yet.", "in_progress"),

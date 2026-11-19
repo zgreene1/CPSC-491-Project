@@ -31,6 +31,7 @@ export function ScanProgress() {
   const [connectionLost, setConnectionLost] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasConnectedRef = useRef(false);
 
@@ -91,12 +92,19 @@ export function ScanProgress() {
       cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [scanId]);
+  }, [scanId, retryKey]);
 
   if (error) {
     return (
       <PageContainer title="Scan Progress" description={`Monitoring scan ${scanId}`}>
-        <ErrorMessage title="Backend unavailable" message={error} />
+        <ErrorMessage
+          title="Backend unavailable"
+          message={error}
+          onRetry={() => {
+            setError(null);
+            setRetryKey((key) => key + 1);
+          }}
+        />
       </PageContainer>
     );
   }
