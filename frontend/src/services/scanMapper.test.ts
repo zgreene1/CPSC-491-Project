@@ -93,6 +93,7 @@ describe("mapApiResultToScanRecord", () => {
     expect(record.vulnerabilities[0]).toMatchObject({
       severity: "unclassified",
       cve: "Not yet assessed",
+      cvss: null,
       host: "127.0.0.1",
       port: 22,
       service: "OpenSSH 9.6p1",

@@ -147,7 +147,8 @@ function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatc
     host: port.host_ip,
     port: port.port,
     service: describeService(port),
-    cvss: 0,
+    // No backend scan exposes a CVSS score — null, never a fabricated 0.
+    cvss: null,
     description: `${baseDescription}${describeMatches(matches)}`,
     remediation: matches.length > 0
       ? "A potential version-range match was found against the vulnerability catalog — this is not a confirmed exploit. Review the source reference below and verify before acting."

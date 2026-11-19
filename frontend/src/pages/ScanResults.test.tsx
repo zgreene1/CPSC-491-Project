@@ -156,6 +156,44 @@ describe("ScanResults", () => {
     expect(rows[0]).toHaveTextContent("3.1"); // clicking the same column again toggles ascending
   });
 
+  it("shows a dash instead of a fabricated 0.0 when a finding has no CVSS data", async () => {
+    const unassessedScan: ScanRecord = {
+      ...twoFindingScan,
+      vulnerabilities: [
+        { ...twoFindingScan.vulnerabilities[0], cvss: null },
+        twoFindingScan.vulnerabilities[1],
+      ],
+    };
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(unassessedScan);
+
+    renderScanResults();
+    await screen.findByText("CVE-2021-44228");
+
+    const row = screen.getByText("CVE-2021-44228").closest("tr")!;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+    expect(within(row).queryByText("0.0")).not.toBeInTheDocument();
+  });
+
+  it("sorts unassessed findings below any real CVSS score", async () => {
+    const unassessedScan: ScanRecord = {
+      ...twoFindingScan,
+      vulnerabilities: [
+        { ...twoFindingScan.vulnerabilities[0], cvss: null },
+        twoFindingScan.vulnerabilities[1],
+      ],
+    };
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(unassessedScan);
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-2021-44228");
+
+    await user.click(screen.getByRole("button", { name: /sort by cvss/i }));
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("3.1"); // real score first on descending
+    expect(rows[1]).toHaveTextContent("—");
+  });
+
   it("searches by CVE, host, or service", async () => {
     vi.mocked(resultsService.getScanResults).mockResolvedValue(twoFindingScan);
     const user = userEvent.setup();

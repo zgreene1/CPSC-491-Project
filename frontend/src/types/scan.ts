@@ -35,7 +35,8 @@ export interface Vulnerability {
   host: string;
   port: number;
   service: string;
-  cvss: number;
+  /** No backend scan exposes a CVSS score yet — null for every real finding, never a fabricated 0. */
+  cvss: number | null;
   description: string;
   remediation: string;
   /** Real catalog matches for this host/port, if any. Empty for demo data. */
