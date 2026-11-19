@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { TextField } from "../components/ui/FormField";
+import { WarningBanner } from "../components/ui/WarningBanner";
 import { useAuth } from "../context/AuthContext";
 
 export function Login() {
@@ -54,23 +55,9 @@ export function Login() {
         </div>
 
         {sessionNotice && (
-          <div
-            role="status"
-            className="mb-4 flex items-start gap-3 rounded-xl border border-severity-medium/30 bg-severity-medium/10 px-4 py-3.5"
-          >
-            <span className="mt-0.5 text-severity-medium" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <path
-                  d="M10 2 1 18h18L10 2Zm0 5v5m0 3h.01"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
+          <WarningBanner className="mb-4">
             <p className="text-sm text-ink-200">{sessionNotice}</p>
-          </div>
+          </WarningBanner>
         )}
 
         <form
