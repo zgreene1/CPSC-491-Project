@@ -374,6 +374,63 @@ class ApiServerTests(unittest.TestCase):
 
         self.assertIn(port, open_ports)
 
+    def test_completed_scan_survives_loss_of_in_memory_state(self):
+        # Execute a controlled scan against a local TCP listener.
+        port = self._start_local_listener()
+        live_result = self._start_scan_and_wait_for_results(port)
+
+        scan_id = live_result["scan_id"]
+
+        # Wait for the asynchronous persistence operation to finish.
+        deadline = time.monotonic() + 5
+        saved_result = None
+
+        while time.monotonic() < deadline:
+            saved_result = api_server._scan_repository.get_result_payload(scan_id)
+
+            if saved_result is not None:
+                break
+
+            time.sleep(0.02)
+
+        # Verify the scan was actually stored
+        self.assertIsNotNone(saved_result)
+        self.assertEqual(saved_result["scan_id"], scan_id)
+
+        # Verify the port observations were preserved
+        self.assertEqual(
+            saved_result["ports"],
+            live_result["ports"]
+        )
+
+        # Simulate losing the in-memory scan history
+        with api_server._scans_lock:
+            api_server._scans.clear()
+
+        # Retrieve the completed scan through API
+        response = self.client.get(f"/api/scans/{scan_id}/results")
+
+        self.assertEqual(response.status_code, 200)
+
+        retrieved_result = response.get_json()
+
+        # The API should return the same persisted information
+        self.assertEqual(retrieved_result, saved_result)
+
+        # Verify the persisted scan appears in scan history
+        history_response = self.client.get("/api/scans")
+
+        self.assertEqual(history_response.status_code, 200)
+
+        history = history_response.get_json()["scans"]
+
+        matching_scans = [
+            scan for scan in history
+            if scan["scan_id"] == scan_id
+        ]
+
+        self.assertEqual(matching_scans, [saved_result])
+
 
 class AuthEndpointTests(unittest.TestCase):
     """SOC 2 CC6.1 — the auth endpoints themselves are always real,
