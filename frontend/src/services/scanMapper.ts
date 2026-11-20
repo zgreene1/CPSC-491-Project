@@ -1,4 +1,4 @@
-import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Vulnerability } from "../types/scan";
+import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, ScanWarning, Vulnerability } from "../types/scan";
 
 /**
  * Maps the shared backend contracts (see
@@ -53,6 +53,14 @@ interface ApiScanProgress {
   cancellation_requested: boolean;
 }
 
+interface ApiScannerError {
+  code: string;
+  message: string;
+  stage: string;
+  details?: Record<string, unknown> | null;
+  recoverable: boolean;
+}
+
 export interface ApiScanResult {
   scan_id: string | null;
   configuration: { targets: string[] };
@@ -62,6 +70,7 @@ export interface ApiScanResult {
   ports: ApiPortObservation[];
   progress: ApiScanProgress;
   vulnerabilities?: ApiVulnerabilityFinding[];
+  errors?: ApiScannerError[];
 }
 
 const LIFECYCLE_TO_STATUS: Record<string, ScanStatus> = {
@@ -112,6 +121,10 @@ function mapVulnerabilityFinding(finding: ApiVulnerabilityFinding): PotentialMat
   };
 }
 
+function mapScanWarning(error: ApiScannerError): ScanWarning {
+  return { code: error.code, message: error.message, stage: error.stage };
+}
+
 function portKey(hostIp: string, port: number, protocol: string): string {
   return `${hostIp}|${port}|${protocol}`;
 }
@@ -134,7 +147,8 @@ function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatc
     host: port.host_ip,
     port: port.port,
     service: describeService(port),
-    cvss: 0,
+    // No backend scan exposes a CVSS score — null, never a fabricated 0.
+    cvss: null,
     description: `${baseDescription}${describeMatches(matches)}`,
     remediation: matches.length > 0
       ? "A potential version-range match was found against the vulnerability catalog — this is not a confirmed exploit. Review the source reference below and verify before acting."
@@ -182,5 +196,9 @@ export function mapApiResultToScanRecord(result: ApiScanResult): ScanRecord {
       scanDepth: "standard",
     },
     vulnerabilities,
+    // Non-recoverable errors mean the whole scan failed (already reflected by
+    // `status`), so only recoverable ones surface as a non-fatal warning —
+    // e.g. vulnerability matching was unavailable but port results are intact.
+    warnings: (result.errors ?? []).filter((error) => error.recoverable).map(mapScanWarning),
   };
 }

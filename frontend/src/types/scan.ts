@@ -35,7 +35,8 @@ export interface Vulnerability {
   host: string;
   port: number;
   service: string;
-  cvss: number;
+  /** No backend scan exposes a CVSS score yet — null for every real finding, never a fabricated 0. */
+  cvss: number | null;
   description: string;
   remediation: string;
   /** Real catalog matches for this host/port, if any. Empty for demo data. */
@@ -53,9 +54,24 @@ export interface ScanSummary {
   isDemo: boolean;
 }
 
+/**
+ * A non-fatal, recoverable problem the backend hit while producing this scan
+ * (e.g. the vulnerability catalog failed to load) — the scan itself still
+ * completed and its port/host results are intact. See
+ * Backend/scanner_coordinator.py, which already emits these; this is real
+ * backend data, not a frontend invention.
+ */
+export interface ScanWarning {
+  code: string;
+  message: string;
+  stage: string;
+}
+
 export interface ScanRecord extends ScanSummary {
   config: ScanConfig;
   vulnerabilities: Vulnerability[];
+  /** Recoverable scan-level issues to surface, e.g. matching unavailable. Empty for demo data. */
+  warnings: ScanWarning[];
 }
 
 export type RemediationStatus = "open" | "in-progress" | "resolved" | "accepted-risk";

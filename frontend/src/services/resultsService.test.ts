@@ -82,14 +82,14 @@ describe("getScanResults", () => {
     } satisfies Partial<ScanApiError>);
   });
 
-  it("throws when the scan hasn't finished yet", async () => {
+  it("throws an in_progress error when the scan hasn't finished yet", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce({
       ok: false,
       status: 202,
     } as Response);
 
-    await expect(getScanResults("scan-still-running")).rejects.toThrow(
-      "hasn't finished yet",
-    );
+    await expect(getScanResults("scan-still-running")).rejects.toMatchObject({
+      kind: "in_progress",
+    } satisfies Partial<ScanApiError>);
   });
 });

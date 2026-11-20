@@ -41,6 +41,7 @@ function demoScan(overrides: Partial<ScanRecord> = {}): ScanRecord {
         matches: [],
       },
     ],
+    warnings: [],
     ...overrides,
   };
 }
@@ -69,6 +70,7 @@ function liveScan(overrides: Partial<ScanRecord> = {}): ScanRecord {
         matches: [{ vulnerabilityId: "CVE-2024-0001", status: "potential", summary: "OpenSSH match", sourceUrl: "https://example.com", confidence: 0.8 }],
       },
     ],
+    warnings: [],
     ...overrides,
   };
 }

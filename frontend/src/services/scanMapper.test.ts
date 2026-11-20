@@ -93,6 +93,7 @@ describe("mapApiResultToScanRecord", () => {
     expect(record.vulnerabilities[0]).toMatchObject({
       severity: "unclassified",
       cve: "Not yet assessed",
+      cvss: null,
       host: "127.0.0.1",
       port: 22,
       service: "OpenSSH 9.6p1",
@@ -226,5 +227,100 @@ describe("mapApiResultToScanRecord", () => {
     // The port with no catalog match keeps the existing "not yet assessed" shape.
     expect(sshRow.matches).toEqual([]);
     expect(sshRow.cve).toBe("Not yet assessed");
+  });
+
+  it("surfaces a recoverable scan-level error as a warning", () => {
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-5",
+      configuration: { targets: ["127.0.0.1"] },
+      state: "COMPLETED",
+      started_at: "2026-10-01T00:00:00",
+      completed_at: "2026-10-01T00:00:05",
+      ports: [],
+      progress: {
+        scan_id: "scan-5",
+        state: "COMPLETED",
+        hosts_discovered: 1,
+        hosts_completed: 1,
+        ports_completed: 0,
+        total_ports: 0,
+        percent_complete: 100,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 1,
+        cancellation_requested: false,
+      },
+      errors: [
+        {
+          code: "VULNERABILITY_CATALOG_ERROR",
+          message: "Vulnerability matching was unavailable; port results were preserved.",
+          stage: "matching",
+          recoverable: true,
+        },
+      ],
+    });
+
+    expect(record.warnings).toEqual([
+      {
+        code: "VULNERABILITY_CATALOG_ERROR",
+        message: "Vulnerability matching was unavailable; port results were preserved.",
+        stage: "matching",
+      },
+    ]);
+  });
+
+  it("does not surface a non-recoverable error as a warning", () => {
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-6",
+      configuration: { targets: ["127.0.0.1"] },
+      state: "FAILED",
+      started_at: "2026-10-01T00:00:00",
+      completed_at: "2026-10-01T00:00:05",
+      ports: [],
+      progress: {
+        scan_id: "scan-6",
+        state: "FAILED",
+        hosts_discovered: 0,
+        hosts_completed: 0,
+        ports_completed: 0,
+        total_ports: 0,
+        percent_complete: 0,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 1,
+        cancellation_requested: false,
+      },
+      errors: [
+        { code: "UNEXPECTED_FAILURE", message: "The scan crashed.", stage: "scanning", recoverable: false },
+      ],
+    });
+
+    expect(record.warnings).toEqual([]);
+  });
+
+  it("defaults to no warnings when the backend omits the errors field", () => {
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-7",
+      configuration: { targets: ["127.0.0.1"] },
+      state: "COMPLETED",
+      started_at: "2026-10-01T00:00:00",
+      completed_at: "2026-10-01T00:00:05",
+      ports: [],
+      progress: {
+        scan_id: "scan-7",
+        state: "COMPLETED",
+        hosts_discovered: 1,
+        hosts_completed: 1,
+        ports_completed: 0,
+        total_ports: 0,
+        percent_complete: 100,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 1,
+        cancellation_requested: false,
+      },
+    });
+
+    expect(record.warnings).toEqual([]);
   });
 });
