@@ -55,8 +55,12 @@ class ApiServerTests(unittest.TestCase):
         )
         thread.start()
 
-        self.addCleanup(server.shutdown)
-        self.addCleanup(server.server_close)
+        def stop_server() -> None:
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+        self.addCleanup(stop_server)
 
         return port
 

@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 class Database:
@@ -12,7 +13,7 @@ class Database:
         return connection
 
     def initialize(self) -> None:
-        with self.connect() as connection:
+        with closing(self.connect()) as connection, connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS scans (
                     scan_id TEXT NOT NULL PRIMARY KEY,

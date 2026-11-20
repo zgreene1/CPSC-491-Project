@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 try:
     from .scan_record_database import Database
@@ -18,7 +19,7 @@ class ScanRepository:
 
     def save(self, scan: ScanRecord) -> str:
         try:
-            with self.database.connect() as connection:
+            with closing(self.database.connect()) as connection, connection:
                 connection.execute("""
                     INSERT INTO scans (
                         scan_id,
@@ -97,7 +98,7 @@ class ScanRepository:
         target = ", ".join(str(item) for item in targets) or ""
         encoded = json.dumps(result, separators=(",", ":"), ensure_ascii=False)
 
-        with self.database.connect() as connection:
+        with closing(self.database.connect()) as connection, connection:
             connection.execute(
                 """INSERT INTO scans
                    (scan_id, target, started_at, completed_at, scan_status,
@@ -126,14 +127,14 @@ class ScanRepository:
         return scan_id
 
     def get_result_payload(self, scan_id: str) -> dict | None:
-        with self.database.connect() as connection:
+        with closing(self.database.connect()) as connection:
             row = connection.execute(
                 "SELECT result_json FROM scan_results WHERE scan_id = ?", (scan_id,)
             ).fetchone()
         return json.loads(row[0]) if row else None
 
     def list_result_payloads(self) -> list[dict]:
-        with self.database.connect() as connection:
+        with closing(self.database.connect()) as connection:
             rows = connection.execute(
                 "SELECT result_json FROM scan_results ORDER BY started_at DESC, scan_id DESC"
             ).fetchall()
