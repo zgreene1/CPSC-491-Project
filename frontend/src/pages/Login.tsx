@@ -3,10 +3,11 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { TextField } from "../components/ui/FormField";
+import { WarningBanner } from "../components/ui/WarningBanner";
 import { useAuth } from "../context/AuthContext";
 
 export function Login() {
-  const { login, isAuthenticated, isLoading, error } = useAuth();
+  const { login, isAuthenticated, isLoading, error, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
@@ -52,6 +53,12 @@ export function Login() {
             <p className="mt-1 text-sm text-ink-400">Sign in to your vulnerability scanner</p>
           </div>
         </div>
+
+        {sessionNotice && (
+          <WarningBanner className="mb-4">
+            <p className="text-sm text-ink-200">{sessionNotice}</p>
+          </WarningBanner>
+        )}
 
         <form
           onSubmit={handleSubmit}

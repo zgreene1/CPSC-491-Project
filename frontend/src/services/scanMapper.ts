@@ -1,4 +1,4 @@
-import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Severity, Vulnerability } from "../types/scan";
+import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, ScanWarning, Severity, Vulnerability } from "../types/scan";
 
 /**
  * Maps the shared backend contracts (see
@@ -57,6 +57,14 @@ interface ApiScanProgress {
   cancellation_requested: boolean;
 }
 
+interface ApiScannerError {
+  code: string;
+  message: string;
+  stage: string;
+  details?: Record<string, unknown> | null;
+  recoverable: boolean;
+}
+
 export interface ApiScanResult {
   scan_id: string | null;
   configuration: { targets: string[] };
@@ -66,6 +74,7 @@ export interface ApiScanResult {
   ports: ApiPortObservation[];
   progress: ApiScanProgress;
   vulnerabilities?: ApiVulnerabilityFinding[];
+  errors?: ApiScannerError[];
 }
 
 const LIFECYCLE_TO_STATUS: Record<string, ScanStatus> = {
@@ -127,6 +136,10 @@ function mapVulnerabilityFinding(finding: ApiVulnerabilityFinding): PotentialMat
 
 function isSeverity(value: string | null | undefined): value is Severity {
   return value === "critical" || value === "high" || value === "medium" || value === "low" || value === "info";
+}
+
+function mapScanWarning(error: ApiScannerError): ScanWarning {
+  return { code: error.code, message: error.message, stage: error.stage };
 }
 
 function portKey(hostIp: string, port: number, protocol: string): string {
@@ -208,5 +221,9 @@ export function mapApiResultToScanRecord(result: ApiScanResult): ScanRecord {
       scanDepth: "standard",
     },
     vulnerabilities,
+    // Non-recoverable errors mean the whole scan failed (already reflected by
+    // `status`), so only recoverable ones surface as a non-fatal warning —
+    // e.g. vulnerability matching was unavailable but port results are intact.
+    warnings: (result.errors ?? []).filter((error) => error.recoverable).map(mapScanWarning),
   };
 }

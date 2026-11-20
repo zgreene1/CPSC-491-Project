@@ -47,6 +47,7 @@ function demoScan(overrides: Partial<ScanRecord> = {}): ScanRecord {
         matches: [],
       },
     ],
+    warnings: [],
     ...overrides,
   };
 }
@@ -75,6 +76,7 @@ function liveScan(overrides: Partial<ScanRecord> = {}): ScanRecord {
         matches: [],
       },
     ],
+    warnings: [],
     ...overrides,
   };
 }

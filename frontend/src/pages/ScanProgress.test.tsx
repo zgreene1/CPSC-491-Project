@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -203,5 +203,114 @@ describe("ScanProgress", () => {
 
     expect(await screen.findByText("Backend unavailable")).toBeInTheDocument();
     expect(screen.getByText("Lost connection to the scan service.")).toBeInTheDocument();
+  });
+
+  it("offers a Retry button on a fatal error instead of a dead end", async () => {
+    vi.mocked(scanService.getScanProgress)
+      .mockRejectedValueOnce(
+        new scanService.ScanApiError("Lost connection to the scan service.", "connection"),
+      )
+      .mockResolvedValue({
+        scanId: "scan-abc",
+        status: "running",
+        percentComplete: 10,
+        hostsDiscovered: 1,
+        hostsCompleted: 0,
+        portsCompleted: 0,
+        totalPorts: 5,
+        currentHost: null,
+        currentPort: null,
+        elapsedSeconds: 0,
+        cancellationRequested: false,
+      });
+    const user = userEvent.setup();
+
+    renderScanProgress();
+
+    await screen.findByText("Backend unavailable");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("10%")).toBeInTheDocument();
+    expect(screen.queryByText("Backend unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps showing last-known progress and warns instead of erroring when a poll fails after one already succeeded", async () => {
+    vi.mocked(scanService.getScanProgress)
+      .mockResolvedValueOnce({
+        scanId: "scan-abc",
+        status: "running",
+        percentComplete: 40,
+        hostsDiscovered: 1,
+        hostsCompleted: 0,
+        portsCompleted: 2,
+        totalPorts: 5,
+        currentHost: "10.0.1.12",
+        currentPort: 443,
+        elapsedSeconds: 3,
+        cancellationRequested: false,
+      })
+      .mockRejectedValue(new scanService.ScanApiError("Lost connection to the scan service.", "connection"));
+
+    renderScanProgress();
+
+    expect(await screen.findByText("10.0.1.12")).toBeInTheDocument();
+
+    expect(
+      await screen.findByText(
+        "Connection lost — retrying… the progress below is from the last successful update.",
+        {},
+        { timeout: 3000 },
+      ),
+    ).toBeInTheDocument();
+    // The last-known progress stays on screen — it isn't replaced by a dead-end error.
+    expect(screen.getByText("10.0.1.12")).toBeInTheDocument();
+    expect(screen.queryByText("Backend unavailable")).not.toBeInTheDocument();
+  });
+
+  it("clears the connection-lost warning once polling succeeds again", async () => {
+    vi.mocked(scanService.getScanProgress)
+      .mockResolvedValueOnce({
+        scanId: "scan-abc",
+        status: "running",
+        percentComplete: 40,
+        hostsDiscovered: 1,
+        hostsCompleted: 0,
+        portsCompleted: 2,
+        totalPorts: 5,
+        currentHost: "10.0.1.12",
+        currentPort: 443,
+        elapsedSeconds: 3,
+        cancellationRequested: false,
+      })
+      .mockRejectedValueOnce(new scanService.ScanApiError("Lost connection to the scan service.", "connection"))
+      .mockResolvedValue({
+        scanId: "scan-abc",
+        status: "running",
+        percentComplete: 60,
+        hostsDiscovered: 1,
+        hostsCompleted: 0,
+        portsCompleted: 3,
+        totalPorts: 5,
+        currentHost: "10.0.1.12",
+        currentPort: 443,
+        elapsedSeconds: 4,
+        cancellationRequested: false,
+      });
+
+    renderScanProgress();
+
+    await screen.findByText(
+      "Connection lost — retrying… the progress below is from the last successful update.",
+      {},
+      { timeout: 3000 },
+    );
+
+    await waitFor(
+      () =>
+        expect(
+          screen.queryByText("Connection lost — retrying… the progress below is from the last successful update."),
+        ).not.toBeInTheDocument(),
+      { timeout: 3000 },
+    );
   });
 });
