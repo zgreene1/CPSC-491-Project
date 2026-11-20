@@ -546,9 +546,15 @@ def fingerprint_port(
         product, version, signature_confidence = match
         confidence = max(confidence, signature_confidence)
 
-    # A passive banner can identify a product even when protocol inference was
-    # initially unknown. Re-run against all signatures before falling back.
-    if product is None:
+    # Only a passive, unclassified banner needs a cross-service search. An HTTP
+    # response must not be labeled as an unrelated product merely because a
+    # generic word in its headers matches another service's low-confidence
+    # signature (for example, "Connection: close").
+    if (
+        product is None
+        and observation.detection_method == "passive_banner"
+        and service == "unknown"
+    ):
         broad_match = match_signature(observation.banner)
         if broad_match is not None:
             product, version, signature_confidence = broad_match

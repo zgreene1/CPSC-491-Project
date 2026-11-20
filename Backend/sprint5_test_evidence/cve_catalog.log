@@ -1,0 +1,20 @@
+========================================
+START: 2026-11-19 16:23:36 -0800
+COMMAND: python3 -m unittest -v test_cve_reference_catalog
+========================================
+test_local_mock_banners_provide_both_affected_and_patched_versions (test_cve_reference_catalog.CVEBannerFixtureTests.test_local_mock_banners_provide_both_affected_and_patched_versions) ... ok
+test_apache_version_boundaries_from_official_advisory (test_cve_reference_catalog.CuratedCVERecordTests.test_apache_version_boundaries_from_official_advisory) ... ok
+test_different_product_does_not_inherit_apache_matches (test_cve_reference_catalog.CuratedCVERecordTests.test_different_product_does_not_inherit_apache_matches) ... ok
+test_matches_stay_potential_and_deduplicate (test_cve_reference_catalog.CuratedCVERecordTests.test_matches_stay_potential_and_deduplicate) ... ok
+test_matching_requires_high_confidence_valid_tcp_fingerprint (test_cve_reference_catalog.CuratedCVERecordTests.test_matching_requires_high_confidence_valid_tcp_fingerprint) ... ok
+test_nginx_version_boundaries_from_official_advisory (test_cve_reference_catalog.CuratedCVERecordTests.test_nginx_version_boundaries_from_official_advisory) ... ok
+test_production_catalog_contains_reviewed_cves_only (test_cve_reference_catalog.CuratedCVERecordTests.test_production_catalog_contains_reviewed_cves_only) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.012s
+
+OK
+========================================
+END: 2026-11-19 16:23:36 -0800
+EXIT CODE: 0
+========================================

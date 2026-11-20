@@ -1,0 +1,18 @@
+Sprint 6 baseline
+Test start: 2026-11-19T17:05:53-08:00
+Test finish: 2026-11-19T17:06:21-08:00
+Project source: /home/dantalian/Downloads/CPSC-491-Project-main(2).zip
+Archive top-level name: CPSC-491-Project-main
+Archive embedded snapshot identifier: 3b41cd0eff4d52fe9947968b716d8a6324f20312
+Repository branch shown on GitHub at inspection: main
+Local git branch: unavailable; GitHub source archives omit .git
+Local git status: unavailable; GitHub source archives omit .git
+Local git rev-parse: unavailable; GitHub source archives omit .git
+Archive timestamp: 2026-11-19 16:59 local archive time
+Runtime: Python 3.14.8; pytest 9.1.1; Linux
+
+Baseline command from Backend/:
+python3 -m pytest -v test_scanner_tcp_fingerprint_accuracy.py test_cve_reference_catalog.py test_service_vulnerability_matcher.py
+
+Permissioned run: 33 passed, 49 subtests passed in 14.75s. Scapy import requires local interface access, so the run used the approved host-access path.
+The named tests use loopback fixtures or offline catalog data; no external targets were used.

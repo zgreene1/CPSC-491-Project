@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { validateScanConfig } from "./scanService";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { startScan, validateScanConfig } from "./scanService";
 import type { ScanConfig } from "../types/scan";
 
 const baseConfig: ScanConfig = {
@@ -8,6 +8,28 @@ const baseConfig: ScanConfig = {
   scanType: "quick",
   scanDepth: "standard",
 };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("startScan payload", () => {
+  it("opts into curated vulnerability matching for real API scans", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({ scan_id: "scan-1" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(startScan(baseConfig)).resolves.toEqual({ scanId: "scan-1" });
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      targets: ["10.0.1.12"],
+      match_vulnerabilities: true,
+    });
+  });
+});
 
 describe("validateScanConfig", () => {
   it("passes for a valid IPv4 target and port range", () => {
