@@ -104,11 +104,29 @@ Represents the current stage of a scan.
 | `CREATED` | Scan has been created but work has not started. |
 | `DISCOVERING` | Host discovery is running. |
 | `SCANNING` | TCP port scanning is running. |
-| `IDENTIFYING` | Service identification is running. Future-facing unless fingerprinting is integrated into the coordinator. |
-| `MATCHING` | Vulnerability matching is running. Future-facing until CVE matching is implemented. |
+| `IDENTIFYING` | Service identification is running. |
+| `MATCHING` | Curated offline CVE matching and CVSS scoring are running when enabled. |
 | `COMPLETED` | Scan completed successfully. |
 | `FAILED` | Scan stopped because of an unrecoverable error. |
 | `CANCELLED` | Scan stopped because cancellation was requested. |
+
+## VulnerabilityFinding
+Represents a potential catalog match for an observed product/version. A match is not confirmation that the host is exploitable.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `vulnerability_id` | string | Yes | CVE or test-only lab identifier. |
+| `host_ip`, `port`, `protocol` | string, integer, string | Yes | Observed endpoint associated with the potential match. |
+| `software_id` | string | Yes | Curated product identity, not a CPE. |
+| `observed_version` | string | Yes | Fingerprinted version within the catalog's affected range. |
+| `status` | string | Yes | `potential` for version-range matches. |
+| `summary`, `source_url` | string | Yes | Finding description and advisory reference. |
+| `fingerprint_confidence` | number/null | No | Confidence reported by the fingerprint stage. |
+| `cvss_version` | string/null | No | CVSS version used, currently `3.1`. |
+| `cvss_score` | number/null | No | Calculated Base Score from the catalog vector. |
+| `severity` | string/null | No | CVSS qualitative rating. |
+| `cvss_vector` | string/null | No | Base vector used to calculate the score. |
+| `cvss_source_url` | string/null | No | Source for the CVSS vector. |
 
 ## ScanProgress
 Represents scan progress for backend status and frontend display.
