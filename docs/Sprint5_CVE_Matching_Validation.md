@@ -88,7 +88,7 @@ Start the configured API/frontend in their own terminals. In **New Scan**, choos
 
 ## Remaining limitations
 
-1. Curated subset only; no NVD API ingestion, live syncing, CVSS scoring, or complete CPE/vulnerability analysis.
+1. Curated subset only; no NVD API ingestion, live syncing, or complete CPE/vulnerability analysis. Curated records now include CVSS v3.1 Base vectors and calculate Base scores locally.
 2. The matcher intentionally rejects non-numeric or packaged-version suffixes (for example `OpenSSH_9.6p1` and vendor-backport package tags) rather than making unsafe guesses.
 3. UI currently presents open-port observations in a vulnerability-shaped table. Findings must remain labeled as *potential* and not counted as verified vulnerabilities.
 4. Backend scan history still lives in memory and is not persisted across API restarts.

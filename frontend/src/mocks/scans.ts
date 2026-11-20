@@ -159,6 +159,7 @@ export const mockScans: ScanRecord[] = [
       scanDepth: "deep",
     },
     vulnerabilities: productionWebVulns,
+    warnings: [],
   },
   {
     id: "scan-1019",
@@ -175,6 +176,7 @@ export const mockScans: ScanRecord[] = [
       scanDepth: "standard",
     },
     vulnerabilities: internalApiVulns,
+    warnings: [],
   },
   {
     id: "scan-1007",
@@ -191,6 +193,7 @@ export const mockScans: ScanRecord[] = [
       scanDepth: "light",
     },
     vulnerabilities: [],
+    warnings: [],
   },
 ];
 

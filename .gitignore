@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+Backend/*.sqlite3
+Backend/*.sqlite3-shm
+Backend/*.sqlite3-wal

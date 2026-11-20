@@ -50,6 +50,7 @@ describe("AuthContext", () => {
     await waitFor(() => expect(result.current.isInitializing).toBe(false));
     expect(result.current.isAuthenticated).toBe(false);
     expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    expect(result.current.sessionNotice).toBe("Your session is no longer valid. Please sign in again.");
   });
 
   it("logs out and clears the stored token when login succeeds and logout is called", async () => {
@@ -73,6 +74,8 @@ describe("AuthContext", () => {
     });
     expect(result.current.isAuthenticated).toBe(false);
     expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    // An explicit sign-out needs no explanation — nothing unexpected happened.
+    expect(result.current.sessionNotice).toBeNull();
   });
 
   it("logs out automatically when any API call invalidates the session (e.g. a 401)", async () => {
@@ -90,10 +93,30 @@ describe("AuthContext", () => {
     expect(result.current.isAuthenticated).toBe(true);
 
     act(() => {
-      invalidateSession();
+      invalidateSession("Your session has expired. Please sign in again.");
     });
 
     expect(result.current.isAuthenticated).toBe(false);
     expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    expect(result.current.sessionNotice).toBe("Your session has expired. Please sign in again.");
+  });
+
+  it("clears a stale session notice once a new login succeeds", async () => {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, "fabricated-garbage-token");
+    vi.spyOn(authService, "getCurrentUser").mockRejectedValue(new Error("Session is invalid or expired."));
+    vi.spyOn(authService, "login").mockResolvedValue({
+      user: { username: "analyst", displayName: "analyst" },
+      token: "fresh-token",
+    });
+
+    const { result } = renderAuth();
+    await waitFor(() => expect(result.current.isInitializing).toBe(false));
+    expect(result.current.sessionNotice).not.toBeNull();
+
+    await act(async () => {
+      await result.current.login("analyst", "correct-password");
+    });
+
+    expect(result.current.sessionNotice).toBeNull();
   });
 });

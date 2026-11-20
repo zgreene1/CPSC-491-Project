@@ -65,6 +65,7 @@ The scanner is intentionally split into focused modules so discovery, scanning, 
 * Sprint 2 integration tests
 * Cross-platform compatibility testing
 * Curated offline CVE version-range matching for three reviewed Apache/nginx records (potential findings only)
+* CVSS v3.1 Base score calculation from curated vectors and severity bands
 * Linux support
 * Windows support
 * macOS support
@@ -72,12 +73,8 @@ The scanner is intentionally split into focused modules so discovery, scanning, 
 ### In Development / Planned
 
 * Broad CVE/NVD vulnerability matching (a three-record curated offline matching MVP is implemented)
-* CVE/NVD integration
+* Broad CVE/NVD integration and catalog updates
 * CPE normalization
-* CVSS severity scoring
-* Backend service/API integration
-* Scan persistence
-* Frontend/backend scan contracts
 * Scan scheduling
 * Detection of newly connected devices
 * Periodic rescanning
@@ -916,9 +913,11 @@ Containerized deployment requires special consideration for network discovery be
 
 ---
 
-# Curated Vulnerability Matching (Sprint 5 MVP)
+# Curated Vulnerability Matching and CVSS Scoring (Sprint 5 MVP)
 
-The scanner has an opt-in, offline vulnerability matching step backed by `Backend/vulnerability_catalog.json`. Its three CVE records were verified against Apache/nginx advisories and NVD on November 12, 2026. The catalog is intentionally limited, not a live NVD feed. Only high-confidence, supported TCP fingerprints with numeric versions produce *potential* matches.
+The scanner has an opt-in, offline vulnerability matching step backed by `Backend/vulnerability_catalog.json`. Its three CVE records were verified against Apache/nginx advisories and NVD on November 19, 2026. The catalog is intentionally limited, not a live NVD feed. Only high-confidence, supported TCP fingerprints with numeric versions produce *potential* matches.
+
+Each curated CVE entry includes a CVSS v3.1 Base vector and an NVD reference. The backend calculates the Base Score from that vector using the [FIRST CVSS v3.1 specification](https://www.first.org/cvss/v3.1/specification-document), then assigns its standard qualitative severity band. The frontend shows the score, severity, vector, and score reference for potential catalog matches. This is vulnerability severity only; it does not confirm that a particular host is exploitable or calculate environment-specific risk.
 
 See [Sprint 5 CVE matching verification](docs/Sprint5_CVE_Matching_Validation.md) for evidence, reproducible tests, and harmless vulnerable/patched banner fixtures.
 
@@ -940,9 +939,7 @@ The vulnerability matching layer should remain separate from network discovery a
 
 # Persistence
 
-Persistence has not yet been implemented.
-
-The shared `ScanResult` structure is intended to provide the storage-facing representation for future persistence work.
+Completed scan result payloads are stored in SQLite by the backend API. Active scan progress remains in memory and cannot be resumed after a backend restart.
 
 Expected stored data includes:
 
@@ -1036,19 +1033,19 @@ Coordinator / Lifecycle       [Implemented]
 Progress / Cancellation       [Implemented]
         |
         v
-Backend Service / API         [Planned]
+Backend Service / API         [Implemented]
         |
         v
-Persistence                   [Planned]
+Persistence                   [Implemented: completed API results stored in SQLite]
         |
         v
 Curated CVE Matching         [Implemented: limited MVP]
         |
         v
-CVSS / Severity               [Planned]
+CVSS 3.1 Base / Severity      [Implemented: curated catalog only]
         |
         v
-Web Interface                 [Planned]
+Web Interface                 [In Progress]
         |
         v
 Continuous Monitoring         [Planned]

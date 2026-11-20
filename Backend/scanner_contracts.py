@@ -339,6 +339,11 @@ class VulnerabilityFinding(JSONSerializable):
     summary: str
     source_url: str
     fingerprint_confidence: Optional[float] = None
+    cvss_version: Optional[str] = None
+    cvss_score: Optional[float] = None
+    severity: Optional[str] = None
+    cvss_vector: Optional[str] = None
+    cvss_source_url: Optional[str] = None
 
 
 @dataclass

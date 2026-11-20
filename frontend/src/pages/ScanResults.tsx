@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { PageContainer } from "../components/layout/PageContainer";
-import { Card } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { LoadingOverlay } from "../components/ui/LoadingIndicator";
+import { Pagination } from "../components/ui/Pagination";
 import { SeverityBadge } from "../components/ui/SeverityBadge";
 import { Table, type Column, type SortDirection } from "../components/ui/Table";
 import { VulnerabilityDetailPanel } from "../components/ui/VulnerabilityDetailPanel";
+import { WarningBanner } from "../components/ui/WarningBanner";
 import * as resultsService from "../services/resultsService";
+import { ScanApiError } from "../services/scanService";
 import type { ScanRecord, Severity, Vulnerability } from "../types/scan";
 
 const severityRank: Record<Severity, number> = {
@@ -28,23 +32,29 @@ const severityFilters: Array<Severity | "all"> = [
   "info",
   "unclassified",
 ];
+const PAGE_SIZE = 25;
 
 export function ScanResults() {
   const { scanId } = useParams<{ scanId: string }>();
+  const navigate = useNavigate();
   const [scan, setScan] = useState<ScanRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInProgress, setIsInProgress] = useState(false);
   const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<string>("severity");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selected, setSelected] = useState<Vulnerability | null>(null);
+  const [page, setPage] = useState(1);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     if (!scanId) return;
     setIsLoading(true);
     setError(null);
+    setIsInProgress(false);
     resultsService
       .getScanResults(scanId)
       .then((result) => {
@@ -57,6 +67,10 @@ export function ScanResults() {
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err instanceof ScanApiError && err.kind === "in_progress") {
+          setIsInProgress(true);
+          return;
+        }
         setError(
           err instanceof Error ? err.message : "Failed to load scan results. The backend may be unavailable.",
         );
@@ -67,7 +81,7 @@ export function ScanResults() {
     return () => {
       cancelled = true;
     };
-  }, [scanId]);
+  }, [scanId, retryKey]);
 
   const filteredSorted = useMemo(() => {
     if (!scan) return [];
@@ -93,7 +107,9 @@ export function ScanResults() {
           comparison = severityRank[a.severity] - severityRank[b.severity];
           break;
         case "cvss":
-          comparison = a.cvss - b.cvss;
+          // Unassessed findings (no backend CVSS data) rank below any real
+          // score, the same convention severityRank uses for "unclassified".
+          comparison = (a.cvss ?? -1) - (b.cvss ?? -1);
           break;
         case "host":
           comparison = a.host.localeCompare(b.host);
@@ -108,6 +124,18 @@ export function ScanResults() {
     });
     return sorted;
   }, [scan, severityFilter, searchQuery, sortKey, sortDirection]);
+
+  // A filter/search/sort change can leave `page` pointing past the end of
+  // the new, smaller result set — reset to the first page whenever the
+  // underlying filtered list changes instead of showing an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [severityFilter, searchQuery, sortKey, sortDirection, scan?.id]);
+
+  const pagedRows = useMemo(
+    () => filteredSorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredSorted, page],
+  );
 
   function handleSort(key: string) {
     if (key === sortKey) {
@@ -126,10 +154,30 @@ export function ScanResults() {
     );
   }
 
+  if (isInProgress) {
+    return (
+      <PageContainer title="Scan Results">
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="This scan is still running"
+              description="Results will be available here once the scan completes."
+              action={
+                <Button size="sm" onClick={() => navigate(`/scans/${scanId}/progress`)}>
+                  View scan progress
+                </Button>
+              }
+            />
+          </CardBody>
+        </Card>
+      </PageContainer>
+    );
+  }
+
   if (error) {
     return (
       <PageContainer title="Scan Results">
-        <ErrorMessage message={error} />
+        <ErrorMessage message={error} onRetry={() => setRetryKey((key) => key + 1)} />
       </PageContainer>
     );
   }
@@ -142,7 +190,18 @@ export function ScanResults() {
     { key: "host", header: "Host", sortable: true, render: (v) => <span className="font-mono text-sm">{v.host}</span> },
     { key: "port", header: "Port", sortable: true, align: "right", render: (v) => <span className="font-mono text-sm">{v.port}</span> },
     { key: "service", header: "Service", render: (v) => v.service },
-    { key: "cvss", header: "CVSS", sortable: true, align: "right", render: (v) => <span className="font-mono text-sm">{v.cvss.toFixed(1)}</span> },
+    {
+      key: "cvss",
+      header: "CVSS",
+      sortable: true,
+      align: "right",
+      render: (v) =>
+        v.cvss === null ? (
+          <span className="text-sm text-ink-400">—</span>
+        ) : (
+          <span className="font-mono text-sm">{v.cvss.toFixed(1)}</span>
+        ),
+    },
   ];
 
   return (
@@ -150,6 +209,17 @@ export function ScanResults() {
       title="Scan Results"
       description={`${scan.target} · started ${new Date(scan.startedAt).toLocaleString()}`}
     >
+      {scan.warnings.length > 0 && (
+        <WarningBanner>
+          <p className="text-sm font-semibold text-ink-100">Scan completed with a warning</p>
+          {scan.warnings.map((warning) => (
+            <p key={warning.code} className="text-sm text-ink-300">
+              {warning.message}
+            </p>
+          ))}
+        </WarningBanner>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-2">
           {severityFilters.map((sev) => (
@@ -194,7 +264,7 @@ export function ScanResults() {
         <Card className={selected ? "lg:col-span-2" : "lg:col-span-3"}>
           <Table
             columns={columns}
-            rows={filteredSorted}
+            rows={pagedRows}
             rowKey={(row) => row.id}
             sortKey={sortKey}
             sortDirection={sortDirection}
@@ -213,6 +283,15 @@ export function ScanResults() {
               />
             }
           />
+          {filteredSorted.length > PAGE_SIZE && (
+            <Pagination
+              page={page}
+              pageSize={PAGE_SIZE}
+              totalItems={filteredSorted.length}
+              onPageChange={setPage}
+              itemLabel="findings"
+            />
+          )}
         </Card>
 
         {selected && (

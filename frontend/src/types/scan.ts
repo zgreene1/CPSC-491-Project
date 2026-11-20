@@ -17,8 +17,9 @@ export interface ScanConfig {
  * A real match from the backend's vulnerability catalog against an observed
  * service/version. "Potential" because it's a version-range match, not a
  * confirmed exploit — the backend never claims otherwise (see
- * Backend/service_vulnerability_matcher.py). No severity/CVSS here: the
- * backend doesn't produce that data yet.
+ * Backend/service_vulnerability_matcher.py). CVSS data, when available, is
+ * the catalog's CVSS 3.1 Base assessment and does not confirm exploitability
+ * on the scanned host.
  */
 export interface PotentialMatch {
   vulnerabilityId: string;
@@ -26,6 +27,11 @@ export interface PotentialMatch {
   summary: string;
   sourceUrl: string;
   confidence: number | null;
+  cvssVersion?: string;
+  cvssScore?: number;
+  severity?: Severity | "none";
+  cvssVector?: string;
+  cvssSourceUrl?: string;
 }
 
 export interface Vulnerability {
@@ -35,7 +41,9 @@ export interface Vulnerability {
   host: string;
   port: number;
   service: string;
-  cvss: number;
+  cvss: number | null;
+  cvssVersion?: string | null;
+  cvssVector?: string | null;
   description: string;
   remediation: string;
   /** Real catalog matches for this host/port, if any. Empty for demo data. */
@@ -53,9 +61,24 @@ export interface ScanSummary {
   isDemo: boolean;
 }
 
+/**
+ * A non-fatal, recoverable problem the backend hit while producing this scan
+ * (e.g. the vulnerability catalog failed to load) — the scan itself still
+ * completed and its port/host results are intact. See
+ * Backend/scanner_coordinator.py, which already emits these; this is real
+ * backend data, not a frontend invention.
+ */
+export interface ScanWarning {
+  code: string;
+  message: string;
+  stage: string;
+}
+
 export interface ScanRecord extends ScanSummary {
   config: ScanConfig;
   vulnerabilities: Vulnerability[];
+  /** Recoverable scan-level issues to surface, e.g. matching unavailable. Empty for demo data. */
+  warnings: ScanWarning[];
 }
 
 export type RemediationStatus = "open" | "in-progress" | "resolved" | "accepted-risk";

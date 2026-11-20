@@ -57,7 +57,7 @@ export function validateScanConfig(config: ScanConfig): ValidationError[] {
   return errors;
 }
 
-export type ScanApiErrorKind = "validation" | "connection" | "server";
+export type ScanApiErrorKind = "validation" | "connection" | "server" | "in_progress";
 
 export class ScanApiError extends Error {
   readonly kind: ScanApiErrorKind;

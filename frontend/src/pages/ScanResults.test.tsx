@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../context/AuthContext";
 import { ScanResults } from "./ScanResults";
 import * as resultsService from "../services/resultsService";
+import { ScanApiError } from "../services/scanService";
 import type { ScanRecord } from "../types/scan";
 
 function renderScanResults(scanId = "scan-1") {
@@ -13,6 +14,7 @@ function renderScanResults(scanId = "scan-1") {
       <AuthProvider>
         <Routes>
           <Route path="/scans/:scanId/results" element={<ScanResults />} />
+          <Route path="/scans/:scanId/progress" element={<div>Progress page</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -54,7 +56,27 @@ const twoFindingScan: ScanRecord = {
       matches: [],
     },
   ],
+  warnings: [],
 };
+
+function manyFindingScan(count: number): ScanRecord {
+  return {
+    ...twoFindingScan,
+    id: "scan-large",
+    vulnerabilities: Array.from({ length: count }, (_, i) => ({
+      id: `vuln-${i}`,
+      cve: `CVE-0000-${String(i).padStart(4, "0")}`,
+      severity: "unclassified",
+      host: "10.0.0.1",
+      port: 1024 + i,
+      service: "unknown",
+      cvss: 0,
+      description: "Open port detected.",
+      remediation: "No automated remediation guidance available yet.",
+      matches: [],
+    })),
+  };
+}
 
 describe("ScanResults", () => {
   beforeEach(() => {
@@ -72,6 +94,37 @@ describe("ScanResults", () => {
 
     expect(await screen.findByText("CVE-2021-44228")).toBeInTheDocument();
     expect(screen.getByText("N/A")).toBeInTheDocument();
+  });
+
+  it("does not show a warning banner when the scan has no warnings", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(twoFindingScan);
+
+    renderScanResults();
+
+    await screen.findByText("CVE-2021-44228");
+    expect(screen.queryByText("Scan completed with a warning")).not.toBeInTheDocument();
+  });
+
+  it("shows a non-fatal warning banner when the backend reports a recoverable scan error", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue({
+      ...twoFindingScan,
+      warnings: [
+        {
+          code: "VULNERABILITY_CATALOG_ERROR",
+          message: "Vulnerability matching was unavailable; port results were preserved.",
+          stage: "matching",
+        },
+      ],
+    });
+
+    renderScanResults();
+
+    expect(await screen.findByText("Scan completed with a warning")).toBeInTheDocument();
+    expect(
+      screen.getByText("Vulnerability matching was unavailable; port results were preserved."),
+    ).toBeInTheDocument();
+    // The underlying port/finding data is still shown — a warning doesn't hide results.
+    expect(screen.getByText("CVE-2021-44228")).toBeInTheDocument();
   });
 
   it("filters by severity", async () => {
@@ -101,6 +154,44 @@ describe("ScanResults", () => {
     await user.click(screen.getByRole("button", { name: /sort by cvss/i }));
     rows = screen.getAllByRole("row").slice(1);
     expect(rows[0]).toHaveTextContent("3.1"); // clicking the same column again toggles ascending
+  });
+
+  it("shows a dash instead of a fabricated 0.0 when a finding has no CVSS data", async () => {
+    const unassessedScan: ScanRecord = {
+      ...twoFindingScan,
+      vulnerabilities: [
+        { ...twoFindingScan.vulnerabilities[0], cvss: null },
+        twoFindingScan.vulnerabilities[1],
+      ],
+    };
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(unassessedScan);
+
+    renderScanResults();
+    await screen.findByText("CVE-2021-44228");
+
+    const row = screen.getByText("CVE-2021-44228").closest("tr")!;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+    expect(within(row).queryByText("0.0")).not.toBeInTheDocument();
+  });
+
+  it("sorts unassessed findings below any real CVSS score", async () => {
+    const unassessedScan: ScanRecord = {
+      ...twoFindingScan,
+      vulnerabilities: [
+        { ...twoFindingScan.vulnerabilities[0], cvss: null },
+        twoFindingScan.vulnerabilities[1],
+      ],
+    };
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(unassessedScan);
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-2021-44228");
+
+    await user.click(screen.getByRole("button", { name: /sort by cvss/i }));
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("3.1"); // real score first on descending
+    expect(rows[1]).toHaveTextContent("—");
   });
 
   it("searches by CVE, host, or service", async () => {
@@ -223,5 +314,81 @@ describe("ScanResults", () => {
     renderScanResults("scan-does-not-exist");
 
     expect(await screen.findByText("This scan could not be found.")).toBeInTheDocument();
+  });
+
+  it("offers a Retry button on error instead of a dead end", async () => {
+    vi.mocked(resultsService.getScanResults)
+      .mockRejectedValueOnce(new Error("Failed to load scan results."))
+      .mockResolvedValue(twoFindingScan);
+    const user = userEvent.setup();
+
+    renderScanResults();
+
+    await screen.findByText("Failed to load scan results.");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("CVE-2021-44228")).toBeInTheDocument();
+  });
+
+  it("shows a friendly still-running state instead of an error when the scan hasn't finished", async () => {
+    vi.mocked(resultsService.getScanResults).mockRejectedValue(
+      new ScanApiError("This scan hasn't finished yet.", "in_progress"),
+    );
+    const user = userEvent.setup();
+
+    renderScanResults("scan-still-running");
+
+    expect(await screen.findByText("This scan is still running")).toBeInTheDocument();
+    expect(screen.queryByText("This scan hasn't finished yet.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "View scan progress" }));
+    expect(await screen.findByText("Progress page")).toBeInTheDocument();
+  });
+
+  it("does not show pagination for a small result set", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(twoFindingScan);
+
+    renderScanResults();
+
+    await screen.findByText("CVE-2021-44228");
+    expect(screen.queryByText(/Showing \d+/)).not.toBeInTheDocument();
+  });
+
+  it("paginates a large result set instead of rendering every row at once", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+
+    renderScanResults();
+
+    expect(await screen.findByText("Showing 1–25 of 60 findings")).toBeInTheDocument();
+    expect(screen.getByText("CVE-0000-0000")).toBeInTheDocument();
+    expect(screen.queryByText("CVE-0000-0025")).not.toBeInTheDocument();
+  });
+
+  it("navigates to the next page and shows the next slice of findings", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-0000-0000");
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(await screen.findByText("Showing 26–50 of 60 findings")).toBeInTheDocument();
+    expect(screen.queryByText("CVE-0000-0000")).not.toBeInTheDocument();
+    expect(screen.getByText("CVE-0000-0025")).toBeInTheDocument();
+  });
+
+  it("resets to page 1 when the severity filter changes", async () => {
+    vi.mocked(resultsService.getScanResults).mockResolvedValue(manyFindingScan(60));
+    const user = userEvent.setup();
+
+    renderScanResults();
+    await screen.findByText("CVE-0000-0000");
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByText("Showing 26–50 of 60 findings");
+
+    await user.click(screen.getByRole("button", { name: "unclassified" }));
+
+    expect(await screen.findByText("Showing 1–25 of 60 findings")).toBeInTheDocument();
   });
 });
