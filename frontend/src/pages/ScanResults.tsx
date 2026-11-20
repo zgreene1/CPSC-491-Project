@@ -93,7 +93,7 @@ export function ScanResults() {
           comparison = severityRank[a.severity] - severityRank[b.severity];
           break;
         case "cvss":
-          comparison = a.cvss - b.cvss;
+          comparison = (a.cvss ?? -1) - (b.cvss ?? -1);
           break;
         case "host":
           comparison = a.host.localeCompare(b.host);
@@ -142,7 +142,13 @@ export function ScanResults() {
     { key: "host", header: "Host", sortable: true, render: (v) => <span className="font-mono text-sm">{v.host}</span> },
     { key: "port", header: "Port", sortable: true, align: "right", render: (v) => <span className="font-mono text-sm">{v.port}</span> },
     { key: "service", header: "Service", render: (v) => v.service },
-    { key: "cvss", header: "CVSS", sortable: true, align: "right", render: (v) => <span className="font-mono text-sm">{v.cvss.toFixed(1)}</span> },
+    {
+      key: "cvss",
+      header: "CVSS",
+      sortable: true,
+      align: "right",
+      render: (v) => <span className="font-mono text-sm">{v.cvss === null ? "—" : v.cvss.toFixed(1)}</span>,
+    },
   ];
 
   return (

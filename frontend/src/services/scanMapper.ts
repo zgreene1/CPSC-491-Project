@@ -1,14 +1,13 @@
-import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Vulnerability } from "../types/scan";
+import type { PotentialMatch, ScanProgressState, ScanRecord, ScanStatus, Severity, Vulnerability } from "../types/scan";
 
 /**
  * Maps the shared backend contracts (see
  * "DOCS Inprogress/S2-01 Shared Scanner Data Contracts.md") onto the
  * frontend's domain types. The backend's vulnerability matcher is real and
  * wired in (see Backend/service_vulnerability_matcher.py), with a small
- * curated offline catalog (not a full CVE feed). The backend does not expose
- * severity or CVSS, so the frontend keeps every port observation's severity
- * "unclassified" rather than inventing a rating. Version-range matches
- * appear in the `matches` field as POTENTIAL findings.
+ * curated offline catalog (not a full CVE feed). CVSS 3.1 Base score, vector,
+ * and severity are included with catalog matches. Version-range matches
+ * remain POTENTIAL findings, not confirmed vulnerabilities.
  */
 
 interface ApiPortObservation {
@@ -37,6 +36,11 @@ interface ApiVulnerabilityFinding {
   summary: string;
   source_url: string;
   fingerprint_confidence: number | null;
+  cvss_version?: string | null;
+  cvss_score?: number | null;
+  severity?: string | null;
+  cvss_vector?: string | null;
+  cvss_source_url?: string | null;
 }
 
 interface ApiScanProgress {
@@ -109,7 +113,20 @@ function mapVulnerabilityFinding(finding: ApiVulnerabilityFinding): PotentialMat
     summary: finding.summary,
     sourceUrl: finding.source_url,
     confidence: finding.fingerprint_confidence,
+    ...(finding.cvss_version ? { cvssVersion: finding.cvss_version } : {}),
+    ...(finding.cvss_score != null ? { cvssScore: finding.cvss_score } : {}),
+    ...(finding.severity === "none"
+      ? { severity: "none" as const }
+      : isSeverity(finding.severity)
+        ? { severity: finding.severity }
+        : {}),
+    ...(finding.cvss_vector ? { cvssVector: finding.cvss_vector } : {}),
+    ...(finding.cvss_source_url ? { cvssSourceUrl: finding.cvss_source_url } : {}),
   };
+}
+
+function isSeverity(value: string | null | undefined): value is Severity {
+  return value === "critical" || value === "high" || value === "medium" || value === "low" || value === "info";
 }
 
 function portKey(hostIp: string, port: number, protocol: string): string {
@@ -123,18 +140,24 @@ function describeMatches(matches: PotentialMatch[]): string {
 }
 
 function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatch[]): Vulnerability {
+  const primaryMatch = [...matches].sort(
+    (left, right) => (right.cvssScore ?? -1) - (left.cvssScore ?? -1),
+  )[0];
+  const primarySeverity = primaryMatch?.severity;
   const baseDescription = port.banner
     ? `Open port detected. Observed banner: ${port.banner}`
     : "Open port detected. CVE matching uses a limited curated catalog.";
 
   return {
     id: `${port.host_ip}-${port.port}`,
-    cve: matches[0]?.vulnerabilityId ?? "Not yet assessed",
-    severity: "unclassified",
+    cve: primaryMatch?.vulnerabilityId ?? "Not yet assessed",
+    severity: primarySeverity && primarySeverity !== "none" ? primarySeverity : "unclassified",
     host: port.host_ip,
     port: port.port,
     service: describeService(port),
-    cvss: 0,
+    cvss: primaryMatch?.cvssScore ?? null,
+    cvssVersion: primaryMatch?.cvssVersion ?? null,
+    cvssVector: primaryMatch?.cvssVector ?? null,
     description: `${baseDescription}${describeMatches(matches)}`,
     remediation: matches.length > 0
       ? "A potential version-range match was found against the vulnerability catalog — this is not a confirmed exploit. Review the source reference below and verify before acting."
@@ -164,8 +187,11 @@ export function mapApiResultToScanRecord(result: ApiScanResult): ScanRecord {
     medium: 0,
     low: 0,
     info: 0,
-    unclassified: vulnerabilities.length,
+    unclassified: 0,
   };
+  for (const vulnerability of vulnerabilities) {
+    severityCounts[vulnerability.severity] += 1;
+  }
 
   return {
     id: result.scan_id ?? "unknown-scan",
