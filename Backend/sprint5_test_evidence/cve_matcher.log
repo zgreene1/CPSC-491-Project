@@ -1,0 +1,31 @@
+========================================
+START: 2026-11-19 16:23:45 -0800
+COMMAND: python3 -m unittest -v test_service_vulnerability_matcher
+========================================
+test_corrupt_missing_catalog_is_error_not_empty_findings (test_service_vulnerability_matcher.CatalogMatchingTests.test_corrupt_missing_catalog_is_error_not_empty_findings) ... ok
+test_lab_fixture_is_only_allowed_when_explicitly_enabled (test_service_vulnerability_matcher.CatalogMatchingTests.test_lab_fixture_is_only_allowed_when_explicitly_enabled) ... ok
+test_never_match_unlisted_products_or_banners_without_versions (test_service_vulnerability_matcher.CatalogMatchingTests.test_never_match_unlisted_products_or_banners_without_versions) ... ok
+test_potential_not_confirmed_and_never_from_unknown (test_service_vulnerability_matcher.CatalogMatchingTests.test_potential_not_confirmed_and_never_from_unknown) ... ok
+test_rejects_unbounded_invalid_reversed_duplicate_and_non_numeric_catalog (test_service_vulnerability_matcher.CatalogMatchingTests.test_rejects_unbounded_invalid_reversed_duplicate_and_non_numeric_catalog) ... ok
+test_version_boundaries_and_padding (test_service_vulnerability_matcher.CatalogMatchingTests.test_version_boundaries_and_padding) ... ok
+test_vetted_sample_cve_matches_only_apache_2_4_49 (test_service_vulnerability_matcher.CatalogMatchingTests.test_vetted_sample_cve_matches_only_apache_2_4_49) ... ok
+test_catalog_failure_preserves_open_ports_and_reports_error (test_service_vulnerability_matcher.CoordinatorMatchingIntegrationTests.test_catalog_failure_preserves_open_ports_and_reports_error) ... ok
+test_default_matching_disabled_but_curated_catalog_can_compare_patched_versions (test_service_vulnerability_matcher.CoordinatorMatchingIntegrationTests.test_default_matching_disabled_but_curated_catalog_can_compare_patched_versions) ... ok
+test_invalid_matching_flag_is_rejected (test_service_vulnerability_matcher.CoordinatorMatchingIntegrationTests.test_invalid_matching_flag_is_rejected) ... ok
+test_live_loopback_banners_match_actual_curated_cve_boundaries (test_service_vulnerability_matcher.CoordinatorMatchingIntegrationTests.test_live_loopback_banners_match_actual_curated_cve_boundaries) ... ok
+test_opt_in_matching_with_real_local_apache_fixture (test_service_vulnerability_matcher.CoordinatorMatchingIntegrationTests.test_opt_in_matching_with_real_local_apache_fixture) ... ok
+test_adapter_preserves_identification_method_and_software_id (test_service_vulnerability_matcher.SoftwareIdentityTests.test_adapter_preserves_identification_method_and_software_id) ... ok
+test_known_software_is_normalized_by_exact_fingerprint_product (test_service_vulnerability_matcher.SoftwareIdentityTests.test_known_software_is_normalized_by_exact_fingerprint_product) ... ok
+test_no_identity_for_closed_udp_or_low_confidence (test_service_vulnerability_matcher.SoftwareIdentityTests.test_no_identity_for_closed_udp_or_low_confidence) ... ok
+test_no_identity_from_hint_unknown_product_or_bad_version (test_service_vulnerability_matcher.SoftwareIdentityTests.test_no_identity_from_hint_unknown_product_or_bad_version) ... ok
+test_no_identity_without_evidence_method_or_with_port_hint (test_service_vulnerability_matcher.SoftwareIdentityTests.test_no_identity_without_evidence_method_or_with_port_hint) ... ok
+test_strict_version_parser_rejects_nonnumeric_suffixes (test_service_vulnerability_matcher.SoftwareIdentityTests.test_strict_version_parser_rejects_nonnumeric_suffixes) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 3.783s
+
+OK
+========================================
+END: 2026-11-19 16:23:53 -0800
+EXIT CODE: 0
+========================================

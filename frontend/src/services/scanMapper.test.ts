@@ -49,7 +49,123 @@ describe("mapApiProgress", () => {
 });
 
 describe("mapApiResultToScanRecord", () => {
-  it("marks every real port finding as unclassified since the backend has no CVE matching yet", () => {
+  it("preserves both Apache catalog matches for one observed port", () => {
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-apache-two-matches",
+      configuration: { targets: ["127.0.0.1"] },
+      state: "COMPLETED",
+      started_at: "2026-11-19T00:00:00",
+      completed_at: "2026-11-19T00:00:02",
+      ports: [
+        {
+          host_ip: "127.0.0.1",
+          host_mac: null,
+          port: 18449,
+          protocol: "tcp",
+          state: "open",
+          service_hint: "http",
+          service: "http",
+          product: "Apache httpd",
+          version: "2.4.49",
+          banner: "Server: Apache/2.4.49",
+          confidence: 0.98,
+          observed_at: "2026-11-19T00:00:01",
+        },
+      ],
+      progress: {
+        scan_id: "scan-apache-two-matches",
+        state: "COMPLETED",
+        hosts_discovered: 1,
+        hosts_completed: 1,
+        ports_completed: 1,
+        total_ports: 1,
+        percent_complete: 100,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 2,
+        cancellation_requested: false,
+      },
+      vulnerabilities: [
+        {
+          vulnerability_id: "CVE-2021-41773",
+          host_ip: "127.0.0.1",
+          port: 18449,
+          protocol: "tcp",
+          software_id: "apache:http_server",
+          observed_version: "2.4.49",
+          status: "potential",
+          summary: "Apache path traversal version-range candidate.",
+          source_url: "https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-41773",
+          fingerprint_confidence: 0.98,
+        },
+        {
+          vulnerability_id: "CVE-2021-42013",
+          host_ip: "127.0.0.1",
+          port: 18449,
+          protocol: "tcp",
+          software_id: "apache:http_server",
+          observed_version: "2.4.49",
+          status: "potential",
+          summary: "Apache path traversal version-range candidate.",
+          source_url: "https://httpd.apache.org/security/vulnerabilities_24.html#CVE-2021-42013",
+          fingerprint_confidence: 0.98,
+        },
+      ],
+    });
+
+    expect(record.vulnerabilities).toHaveLength(1);
+    expect(record.vulnerabilities[0].cve).toBe("CVE-2021-41773");
+    expect(record.vulnerabilities[0].matches.map((match) => match.vulnerabilityId)).toEqual([
+      "CVE-2021-41773",
+      "CVE-2021-42013",
+    ]);
+    expect(record.vulnerabilities[0].description).toContain("CVE-2021-41773, CVE-2021-42013");
+  });
+
+  it("keeps TCP and UDP observations on the same port uniquely identified", () => {
+    const port = (protocol: string) => ({
+      host_ip: "127.0.0.1",
+      host_mac: null,
+      port: 5353,
+      protocol,
+      state: "open",
+      service_hint: null,
+      service: "unknown",
+      product: null,
+      version: null,
+      banner: null,
+      confidence: null,
+      observed_at: null,
+    });
+    const record = mapApiResultToScanRecord({
+      scan_id: "scan-both-protocols",
+      configuration: { targets: ["127.0.0.1"] },
+      state: "COMPLETED",
+      started_at: null,
+      completed_at: null,
+      ports: [port("tcp"), port("udp")],
+      progress: {
+        scan_id: "scan-both-protocols",
+        state: "COMPLETED",
+        hosts_discovered: 1,
+        hosts_completed: 1,
+        ports_completed: 2,
+        total_ports: 2,
+        percent_complete: 100,
+        current_host: null,
+        current_port: null,
+        elapsed_seconds: 1,
+        cancellation_requested: false,
+      },
+    });
+
+    expect(record.vulnerabilities.map((item) => item.id)).toEqual([
+      "127.0.0.1-5353-tcp",
+      "127.0.0.1-5353-udp",
+    ]);
+  });
+
+  it("marks real port observations unclassified while severity is unavailable", () => {
     const record = mapApiResultToScanRecord({
       scan_id: "scan-2",
       configuration: { targets: ["127.0.0.1"] },

@@ -1,0 +1,14 @@
+Sprint 6 final targeted test run
+Test start: 2026-11-19T17:04:28-08:00
+Test finish: 2026-11-19T17:05:24-08:00
+Runtime: Python 3.14.8; pytest 9.1.1; Linux
+
+Command from Backend/:
+python3 -m pytest -q test_scanner_tcp_fingerprint_accuracy.py test_cve_reference_catalog.py test_service_vulnerability_matcher.py test_scanner_sprint6_accuracy.py
+
+Final result: 42 passed, 53 subtests passed in 19.12s.
+The suite required permissioned execution because Scapy enumerates local interfaces during import and the sandbox denied its raw socket. Test traffic is restricted to 127.0.0.1 ephemeral TCP fixtures; closed TCP and silent UDP use local controlled conditions; catalog tests are offline.
+
+Investigation iteration: ACC-05 first failed because generic HTTP headers were fingerprinted as product "connection". After restricting cross-service fallback to passive, unclassified banners and removing the protocol-as-product HTTP signature, the final run passed.
+
+Frontend tests added but not run: frontend/node_modules was absent. Windows and macOS tests were not run.

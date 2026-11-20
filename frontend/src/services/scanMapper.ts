@@ -162,9 +162,14 @@ function mapPortToVulnerability(port: ApiPortObservation, matches: PotentialMatc
     : "Open port detected. CVE matching uses a limited curated catalog.";
 
   return {
-    id: `${port.host_ip}-${port.port}`,
+    // TCP and UDP may both be scanned on the same host/port number.
+    // Include protocol so their frontend records remain distinct.
+    id: `${port.host_ip}-${port.port}-${port.protocol}`,
     cve: primaryMatch?.vulnerabilityId ?? "Not yet assessed",
-    severity: primarySeverity && primarySeverity !== "none" ? primarySeverity : "unclassified",
+    severity:
+      primarySeverity && primarySeverity !== "none"
+        ? primarySeverity
+        : "unclassified",
     host: port.host_ip,
     port: port.port,
     service: describeService(port),

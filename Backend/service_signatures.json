@@ -408,12 +408,6 @@
     "confidence": 0.35
   },
   {
-    "service": "http",
-    "product": "http",
-    "pattern": "(?<![0-9A-Za-z])http(?![0-9A-Za-z])",
-    "confidence": 0.35
-  },
-  {
     "service": "www",
     "product": "www",
     "pattern": "(?<![0-9A-Za-z])www(?![0-9A-Za-z])",
