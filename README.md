@@ -1036,10 +1036,10 @@ Coordinator / Lifecycle       [Implemented]
 Progress / Cancellation       [Implemented]
         |
         v
-Backend Service / API         [Planned]
+Backend Service / API         [Implemented]
         |
         v
-Persistence                   [Planned]
+Persistence                   [Implemented: completed API results stored in SQLite]
         |
         v
 Curated CVE Matching         [Implemented: limited MVP]
@@ -1048,7 +1048,7 @@ Curated CVE Matching         [Implemented: limited MVP]
 CVSS / Severity               [Planned]
         |
         v
-Web Interface                 [Planned]
+Web Interface                 [In Progress]
         |
         v
 Continuous Monitoring         [Planned]

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import socketserver
+import tempfile
 import threading
 import time
 import unittest
@@ -22,8 +23,27 @@ class ApiServerTests(unittest.TestCase):
     def setUp(self) -> None:
         api_server.app.testing = True
         self.client = api_server.app.test_client()
+        self.database_dir = tempfile.TemporaryDirectory(prefix="scanner-api-test-")
+        self.addCleanup(self.database_dir.cleanup)
+        api_server._database = api_server.Database(
+            f"{self.database_dir.name}/scan-history.sqlite3"
+        )
+        api_server._database.initialize()
+        api_server._scan_repository = api_server.ScanRepository(api_server._database)
         with api_server._scans_lock:
             api_server._scans.clear()
+
+    def tearDown(self) -> None:
+        # Let daemon scan workers finish persistence before the per-test
+        # database directory is removed.
+        with api_server._scans_lock:
+            entries = list(api_server._scans.items())
+        for scan_id, entry in entries:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if api_server._scan_repository.get_result_payload(scan_id) is not None:
+                    break
+                time.sleep(0.02)
 
     def _start_local_listener(self) -> int:
         """Start a throwaway TCP listener on an OS-assigned port and return it."""
@@ -35,8 +55,12 @@ class ApiServerTests(unittest.TestCase):
         )
         thread.start()
 
-        self.addCleanup(server.shutdown)
-        self.addCleanup(server.server_close)
+        def stop_server() -> None:
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+        self.addCleanup(stop_server)
 
         return port
 
@@ -441,12 +465,27 @@ class RequireAuthEnforcementTests(unittest.TestCase):
     def setUp(self) -> None:
         api_server.app.testing = True
         self.client = api_server.app.test_client()
+        self.database_dir = tempfile.TemporaryDirectory(prefix="scanner-auth-api-test-")
+        api_server._database = api_server.Database(
+            f"{self.database_dir.name}/scan-history.sqlite3"
+        )
+        api_server._database.initialize()
+        api_server._scan_repository = api_server.ScanRepository(api_server._database)
         with api_server._scans_lock:
             api_server._scans.clear()
         os.environ["AUTH_USERNAME"] = "analyst"
         os.environ["AUTH_PASSWORD"] = "test-password-123"
 
     def tearDown(self) -> None:
+        with api_server._scans_lock:
+            entries = list(api_server._scans.items())
+        for scan_id, _entry in entries:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if api_server._scan_repository.get_result_payload(scan_id) is not None:
+                    break
+                time.sleep(0.02)
+        self.database_dir.cleanup()
         os.environ.pop("REQUIRE_AUTH", None)
         os.environ.pop("AUTH_USERNAME", None)
         os.environ.pop("AUTH_PASSWORD", None)

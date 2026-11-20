@@ -53,7 +53,7 @@ def sample_scan():
 
 def test_initialize_creates_tables(database):
     """Test if the tables can be created"""
-    with database.connect() as connection:
+    with closing(database.connect()) as connection, connection:
         rows = connection.execute(
             """
             SELECT name
@@ -73,7 +73,7 @@ def test_save_persists_scan(database, sample_scan):
 
     repository.save(sample_scan)
 
-    with database.connect() as connection:
+    with closing(database.connect()) as connection, connection:
         row = connection.execute(
             """
             SELECT
@@ -101,7 +101,7 @@ def test_save_persists_scan_ports(database, sample_scan):
 
     repository.save(sample_scan)
 
-    with database.connect() as connection:
+    with closing(database.connect()) as connection, connection:
         rows = connection.execute(
             """
             SELECT
@@ -144,7 +144,7 @@ def test_save_allows_no_open_port_scan(database):
     
     repository.save(zero_scan)
 
-    with database.connect() as connection:
+    with closing(database.connect()) as connection, connection:
         row = connection.execute(
             """
             SELECT scan_id
